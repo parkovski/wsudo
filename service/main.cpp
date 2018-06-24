@@ -1,149 +1,18 @@
+#include "stdo/stdo.h"
+#include "stdo/winsupport.h"
+#include "stdo/ntapi.h"
+
 #include <fmt/format.h>
-#include <Windows.h>
 #include <Psapi.h>
 #include <cstring>
 #include <string>
 #include <iostream>
+#include <system_error>
 
-void remoteThread() {
-  fmt::print("Process ID> ");
-  std::string s;
-  std::getline(std::cin, s);
-  unsigned long long pid = std::stoull(s);
-  fmt::print("Function address> ");
-  std::getline(std::cin, s);
-  unsigned long long addr = std::stoull(s);
+using namespace stdo;
 
-  HANDLE process = OpenProcess(PROCESS_ALL_ACCESS, false, (DWORD)pid);
-  DWORD threadId;
-  HANDLE thread = CreateRemoteThread(process, nullptr, 0, (LPTHREAD_START_ROUTINE)addr, nullptr, CREATE_SUSPENDED, &threadId);
-  fmt::print("Enter to run thread\n");
-  std::getline(std::cin, s);
-  ResumeThread(thread);
-  CloseHandle(thread);
-  CloseHandle(process);
-}
-
-typedef struct _STRING {
-  USHORT Length;
-  USHORT MaximumLength;
-  PCHAR  Buffer;
-} STRING, OEM_STRING, *PSTRING;
-
-typedef struct _LSA_UNICODE_STRING {
-  USHORT Length;
-  USHORT MaximumLength;
-  PWSTR  Buffer;
-} LSA_UNICODE_STRING, *PLSA_UNICODE_STRING, UNICODE_STRING, *PUNICODE_STRING;
-
-typedef struct _CURDIR
-{
-    UNICODE_STRING DosPath;
-    HANDLE Handle;
-} CURDIR, *PCURDIR;
-
-typedef struct _RTL_DRIVE_LETTER_CURDIR
-{
-    USHORT Flags;
-    USHORT Length;
-    ULONG TimeStamp;
-    STRING DosPath;
-} RTL_DRIVE_LETTER_CURDIR, *PRTL_DRIVE_LETTER_CURDIR;
-
-#define RTL_MAX_DRIVE_LETTERS 32
-typedef struct _RTL_USER_PROCESS_PARAMETERS
-{
-    ULONG MaximumLength;
-    ULONG Length;
-
-    ULONG Flags;
-    ULONG DebugFlags;
-
-    HANDLE ConsoleHandle;
-    ULONG ConsoleFlags;
-    HANDLE StandardInput;
-    HANDLE StandardOutput;
-    HANDLE StandardError;
-
-    CURDIR CurrentDirectory;
-    UNICODE_STRING DllPath;
-    UNICODE_STRING ImagePathName;
-    UNICODE_STRING CommandLine;
-    PVOID Environment;
-
-    ULONG StartingX;
-    ULONG StartingY;
-    ULONG CountX;
-    ULONG CountY;
-    ULONG CountCharsX;
-    ULONG CountCharsY;
-    ULONG FillAttribute;
-
-    ULONG WindowFlags;
-    ULONG ShowWindowFlags;
-    UNICODE_STRING WindowTitle;
-    UNICODE_STRING DesktopInfo;
-    UNICODE_STRING ShellInfo;
-    UNICODE_STRING RuntimeData;
-    RTL_DRIVE_LETTER_CURDIR CurrentDirectories[RTL_MAX_DRIVE_LETTERS];
-
-    ULONG_PTR EnvironmentSize;
-    ULONG_PTR EnvironmentVersion;
-    PVOID PackageDependencyData;
-    ULONG ProcessGroupId;
-    ULONG LoaderThreads;
-} RTL_USER_PROCESS_PARAMETERS, *PRTL_USER_PROCESS_PARAMETERS;
-
-typedef struct _PEB
-{
-    BOOLEAN InheritedAddressSpace;
-    BOOLEAN ReadImageFileExecOptions;
-    BOOLEAN BeingDebugged;
-    union
-    {
-        BOOLEAN BitField;
-        struct
-        {
-            BOOLEAN ImageUsesLargePages : 1;
-            BOOLEAN IsProtectedProcess : 1;
-            BOOLEAN IsImageDynamicallyRelocated : 1;
-            BOOLEAN SkipPatchingUser32Forwarders : 1;
-            BOOLEAN IsPackagedProcess : 1;
-            BOOLEAN IsAppContainer : 1;
-            BOOLEAN IsProtectedProcessLight : 1;
-            BOOLEAN IsLongPathAwareProcess : 1;
-        };
-    };
-
-    HANDLE Mutant;
-
-    PVOID ImageBaseAddress;
-    PVOID Ldr;
-    PRTL_USER_PROCESS_PARAMETERS ProcessParameters;
-    PVOID SubSystemData;
-} PEB, *PPEB;
-
-typedef struct _PROCESS_BASIC_INFORMATION {
-    PVOID Reserved1;
-    PPEB PebBaseAddress;
-    PVOID Reserved2[2];
-    ULONG_PTR UniqueProcessId;
-    PVOID Reserved3;
-} PROCESS_BASIC_INFORMATION;
-
-DWORD childProcess(DWORD pid, const wchar_t *exeName, const wchar_t *args) {
-  STARTUPINFOEXW si{};
-  PROCESS_INFORMATION pi{};
-  HANDLE process{};
-  HANDLE myToken{};
-  HANDLE token{};
-  auto ntdll = GetModuleHandleW(L"ntdll.dll");
-  NTSTATUS ntstatus;
-  auto RtlNtStatusToDosError =
-    reinterpret_cast<ULONG (* WINAPI)(NTSTATUS)>(
-      GetProcAddress(ntdll, "RtlNtStatusToDosError")
-    );
-
+/// Convert exe + args to a single string, quoted if the exe contains spaces.
+std::wstring fullCommandLine(const wchar_t *exeName, const wchar_t *args) {
   size_t exelen = wcslen(exeName);
   size_t arglen = args ? wcslen(args) : 0;
   bool hasSpace = !!wcschr(exeName, L' ');
@@ -168,48 +37,36 @@ DWORD childProcess(DWORD pid, const wchar_t *exeName, const wchar_t *args) {
     argsFull.append(args);
   }
 
-  using std::cout;
+  return argsFull;
+}
 
-  cout << "OpenProcess(PROCESS_ALL_ACCESS, false, pid);\n";
-  if (!(process = OpenProcess(PROCESS_ALL_ACCESS, false, pid))) {
-    goto error;
-  }
-  cout << "OpenProcessToken(GetCurrentProcess(), TOKEN_ALL_ACCESS, &myToken);\n";
-  if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ALL_ACCESS, &myToken)) {
-    goto error;
-  }
-  cout << "DuplicateTokenEx(myToken, TOKEN_ALL_ACCESS, nullptr, SecurityImpersonation, TokenPrimary, &token);\n";
-  if (!DuplicateTokenEx(
-    myToken, TOKEN_ALL_ACCESS, nullptr, SecurityImpersonation, TokenPrimary, &token
-  ))
+/// Duplicate this process' token into a new primary token.
+DWORD getPrimaryToken(HStdHandle &token) {
+  HStdHandle currentToken;
+  log::trace("Creating primary token from current process.");
+  if (
+    !OpenProcessToken(GetCurrentProcess(), TOKEN_ALL_ACCESS, &currentToken) ||
+    !DuplicateTokenEx(
+      currentToken, TOKEN_ALL_ACCESS, nullptr, SecurityImpersonation,
+      TokenPrimary, &token
+    )
+  )
   {
-    goto error;
+    log::error("Creating primary token failed.");
+    return GetLastError();
   }
 
-  enum PROCESSINFOCLASS { ProcessBasicInformation = 0 };
+  return ERROR_SUCCESS;
+}
 
-  auto NtQueryInformationProcess =
-    reinterpret_cast<NTSTATUS (WINAPI *)(HANDLE, PROCESSINFOCLASS, PVOID, ULONG, PULONG)>(
-      GetProcAddress(ntdll, "NtQueryInformationProcess")
-    );
-  PROCESS_BASIC_INFORMATION pbi;
-  ULONG pbilen;
-  cout << "NtQueryInformationProcess(process, ProcessBasicInformation, &pbi, sizeof(PROCESS_BASIC_INFORMATION), &pbilen);\n";
-  ntstatus = NtQueryInformationProcess(
-    process, ProcessBasicInformation, &pbi, sizeof(PROCESS_BASIC_INFORMATION),
-    &pbilen
-  );
-  if (ntstatus >= 0x80000000) {
-    SetLastError(RtlNtStatusToDosError(ntstatus));
-    goto error;
-  }
-
+DWORD findNamedModule(HANDLE process, const wchar_t *modName, HMODULE *module) {
   // TODO: Hack
   HMODULE modules[100];
   DWORD bytesNeeded;
-  cout << "EnumProcessModules(process, modules, sizeof(modules), &bytesNeeded);\n";
+  log::trace("Enumerating remote process modules.");
+  *module = nullptr;
   if (!EnumProcessModules(process, modules, sizeof(modules), &bytesNeeded)) {
-    goto error;
+    return GetLastError();
   }
   if (bytesNeeded > 100 * sizeof(HMODULE)) {
     bytesNeeded = 100;
@@ -218,129 +75,164 @@ DWORD childProcess(DWORD pid, const wchar_t *exeName, const wchar_t *args) {
   }
   int moduleIndex = -1;
 
-  cout << "GetModuleFileNameW(modules[i], filename, sizeof(filename)/sizeof(filename[0]));\n";
+  log::trace("Searching for target module.");
   for (unsigned i = 0; i < bytesNeeded; ++i) {
     wchar_t filename[512];
     if (!GetModuleFileNameExW(process, modules[i], filename, sizeof(filename)/sizeof(filename[0]))) {
-      cout << " > ***MISSING*** (" << modules[i] << ")\n";
-    } else {
-      std::wcout << L" > " << filename << L"\n";
+      log::warn("module name missing: 0x{:X}", (size_t)modules[i]);
+    } else if (wcsstr(filename, modName)) {
+      log::trace("found module {}", to_utf8(filename));
+      moduleIndex = i;
+      break;
     }
-    if (wcsstr(filename, L"stdo.exe")) {moduleIndex = i; break;}
   }
   if (moduleIndex == -1) {
-    goto error;
+    return ERROR_MOD_NOT_FOUND;
   }
-  PVOID pbaseAddress = modules[moduleIndex];
+  *module = modules[moduleIndex];
+  return ERROR_SUCCESS;
+}
+
+DWORD childProcess(DWORD pid, const wchar_t *exeName, const wchar_t *args) {
+  union {
+    DWORD win32;
+    HRESULT hr;
+    NTSTATUS nt;
+  } err;
+
+  auto ntdll = LinkedModule{L"ntdll.dll"};
+  auto RtlNtStatusToDosError =
+    ntdll.get<nt::RtlNtStatusToDosError_t>("RtlNtStatusToDosError");
+  auto NtQueryInformationProcess =
+    ntdll.get<nt::NtQueryInformationProcess_t>("NtQueryInformationProcess");
+  auto NtSetInformationProcess =
+    ntdll.get<nt::NtSetInformationProcess_t>("NtSetInformationProcess");
+
+  log::trace("Opening remote process with PROCESS_ALL_ACCESS.");
+  HStdHandle process;
+  if (!(process = OpenProcess(PROCESS_ALL_ACCESS, false, pid))) {
+    return GetLastError();
+  }
+
+  HStdHandle token;
+  err.win32 = getPrimaryToken(token);
+  if (err.win32) { return err.win32; }
+
+  PROCESS_BASIC_INFORMATION pbi;
+  ULONG pbilen;
+  log::trace("Finding remote PEB address with NtQueryInformationProcess.");
+  err.nt = NtQueryInformationProcess(
+    process, ProcessBasicInformation, &pbi, sizeof(PROCESS_BASIC_INFORMATION),
+    &pbilen
+  );
+  if (err.nt >= 0x80000000) {
+    return RtlNtStatusToDosError(err.nt);
+  }
+
+  PVOID pbaseAddress;
+  err.win32 = findNamedModule(process, L"stdo.exe", reinterpret_cast<HMODULE *>(&pbaseAddress));
+  if (err.win32) { return err.win32; }
 
   PEB peb;
-  RTL_USER_PROCESS_PARAMETERS processParameters;
+  nt::RTL_USER_PROCESS_PARAMETERS processParameters;
   SIZE_T bytesRead;
-  cout << "ReadProcessMemory(PEB);\n";
+  log::trace("Reading PEB from remote process.");
   if (
     !ReadProcessMemory(process, pbi.PebBaseAddress, &peb, sizeof(PEB), &bytesRead) ||
     bytesRead < sizeof(PEB)
   )
   {
-    goto error;
+    return GetLastError();
   }
-  cout << "ReadProcessMemory(RTL_USE_PROCESS_PARAMETERS);\n";
+  log::trace("Reading RTL_USER_PROCESS_PARAMETERS from remote process.");
   if (
-    !ReadProcessMemory(process, peb.ProcessParameters, &processParameters,
-                       sizeof(RTL_USER_PROCESS_PARAMETERS), &bytesRead) ||
-    bytesRead < sizeof(RTL_USER_PROCESS_PARAMETERS)
+    !ReadProcessMemory(
+      process, peb.ProcessParameters, nt::alt(&processParameters),
+      sizeof(nt::RTL_USER_PROCESS_PARAMETERS), &bytesRead
+    ) ||
+    bytesRead < sizeof(nt::RTL_USER_PROCESS_PARAMETERS)
   )
   {
-    goto error;
+    return GetLastError();
   }
 
+  STARTUPINFOEXW si;
   RtlZeroMemory(&si, sizeof(STARTUPINFOEXW));
   si.StartupInfo.cb = sizeof(STARTUPINFOEXW);
-  cout << " > stdin  = " << processParameters.StandardInput << "\n";
-  cout << " > stdout = " << processParameters.StandardOutput << "\n";
-  cout << " > stderr = " << processParameters.StandardError << "\n";
+  log::trace("stdin  = 0x{:X}", (size_t)processParameters.StandardInput);
+  log::trace("stdout = 0x{:X}", (size_t)processParameters.StandardOutput);
+  log::trace("stderr = 0x{:X}", (size_t)processParameters.StandardError);
   si.StartupInfo.hStdInput = processParameters.StandardInput;
   si.StartupInfo.hStdOutput = processParameters.StandardOutput;
   si.StartupInfo.hStdError = processParameters.StandardError;
-  // si.StartupInfo.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
-  // si.StartupInfo.hStdOutput = GetStdHandle(STD_OUTPUT_HANDLE);
-  // si.StartupInfo.hStdError = GetStdHandle(STD_ERROR_HANDLE);
   si.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
 
   SIZE_T attrListSize;
   InitializeProcThreadAttributeList(nullptr, 1, 0, &attrListSize);
   si.lpAttributeList =
     (LPPROC_THREAD_ATTRIBUTE_LIST)HeapAlloc(GetProcessHeap(), 0, attrListSize);
-
-  if (!InitializeProcThreadAttributeList(si.lpAttributeList, 1, 0, &attrListSize)) {
-    goto error;
+  if (!si.lpAttributeList) {
+    return GetLastError();
   }
+  STDO_SCOPEEXIT { HeapFree(GetProcessHeap(), 0, si.lpAttributeList); };
+
+  log::trace("Setting remote process as parent.");
+  if (!InitializeProcThreadAttributeList(si.lpAttributeList, 1, 0, &attrListSize)) {
+    return GetLastError();
+  }
+  STDO_SCOPEEXIT { DeleteProcThreadAttributeList(si.lpAttributeList); };
 
   if (!UpdateProcThreadAttribute(
     si.lpAttributeList, 0, PROC_THREAD_ATTRIBUTE_PARENT_PROCESS, &process, sizeof(HANDLE), nullptr, nullptr
   ))
   {
-    goto error;
+    return GetLastError();
   }
 
-  cout << "CreateProcessW(...);\n";
+  log::trace("Creating suspended remote child process.");
+  PROCESS_INFORMATION pi;
   if (!CreateProcessW(
-    exeName, argsFull.data(), nullptr, nullptr, true,
+    exeName, fullCommandLine(exeName, args).data(), nullptr, nullptr, true,
     CREATE_UNICODE_ENVIRONMENT | EXTENDED_STARTUPINFO_PRESENT | CREATE_SUSPENDED | CREATE_PRESERVE_CODE_AUTHZ_LEVEL,
     nullptr, nullptr, &si.StartupInfo, &pi
   ))
   {
-    goto error;
+    return GetLastError();
   }
 
-  auto NtSetInformationProcess =
-    reinterpret_cast<NTSTATUS (* WINAPI)(HANDLE, int, PVOID, ULONG)>(
-      GetProcAddress(ntdll, "NtSetInformationProcess")
-    );
-  struct {
-    HANDLE Token;
-    HANDLE Thread;
-  } processAccessToken{token, pi.hThread};
-
-  DWORD result;
-
-  cout << "NtSetInformationProcess(...);\n";
-  ntstatus = NtSetInformationProcess(pi.hProcess, 9, &processAccessToken, sizeof(processAccessToken));
-  if (ntstatus >= 0x80000000) {
-    SetLastError(RtlNtStatusToDosError(ntstatus));
-    goto error;
-  }
-
-  cout << "ResumeThread\n";
-  ResumeThread(pi.hThread);
-
-  result = S_OK;
-  goto cleanup;
-error:
-  result = GetLastError();
-cleanup:
-  if (myToken) {
-    CloseHandle(myToken);
-  }
-  if (token) {
-    CloseHandle(token);
-  }
-  if (process) {
-    CloseHandle(process);
-  }
-  if (si.lpAttributeList) {
-    DeleteProcThreadAttributeList(si.lpAttributeList);
-    HeapFree(GetProcessHeap(), 0, si.lpAttributeList);
-  }
-  if (pi.hProcess) {
+  STDO_SCOPEEXIT {
     CloseHandle(pi.hThread);
     CloseHandle(pi.hProcess);
+  };
+
+  nt::PROCESS_ACCESS_TOKEN processAccessToken{token, pi.hThread};
+
+  log::trace("Assigning elevated token to child process.");
+  err.nt = NtSetInformationProcess(
+    pi.hProcess, nt::ProcessAccessToken, &processAccessToken,
+    sizeof(processAccessToken)
+  );
+  if (err.nt >= 0x80000000) {
+    return RtlNtStatusToDosError(err.nt);
   }
-  return result;
+
+  log::trace("Resuming child process.");
+  ResumeThread(pi.hThread);
+
+  return ERROR_SUCCESS;
 }
 
+std::shared_ptr<spdlog::logger> stdo::log::g_outLogger;
+std::shared_ptr<spdlog::logger> stdo::log::g_errLogger;
+
 int wmain(int argc, wchar_t *argv[]) {
-  fmt::print("Hello from server\n");
+  stdo::log::g_outLogger = spdlog::stdout_color_mt("stdo.out");
+  stdo::log::g_errLogger = spdlog::stderr_color_mt("stdo.err");
+  log::g_errLogger->set_level(spdlog::level::warn);
+  log::g_outLogger->set_level(spdlog::level::trace);
+  STDO_SCOPEEXIT { spdlog::drop_all(); };
+
+  log::info("Hello from server");
   DWORD pid;
   if (argc == 2) {
     wchar_t *end = argv[1] + wcslen(argv[1]);
@@ -354,12 +246,15 @@ int wmain(int argc, wchar_t *argv[]) {
 
   auto err = childProcess(pid, L"C:\\Windows\\System32\\cmd.exe", nullptr);
   // auto err = childProcess(pid, L"C:\\Windows\\System32\\whoami.exe", L"/all");
-  if (err != S_OK) {
-    wchar_t buf[1024];
-    FormatMessageW(FORMAT_MESSAGE_FROM_SYSTEM, nullptr, err, 0, buf, 1024 / 2, nullptr);
-    wprintf(L"Error: %ls\n", buf);
+  if (err != ERROR_SUCCESS) {
+    char buf[1024];
+    FormatMessageA(
+      FORMAT_MESSAGE_FROM_SYSTEM, nullptr, err, 0, buf,
+      sizeof(buf)/sizeof(buf[0]), nullptr
+    );
+    log::error("{}", buf);
   } else {
-    fmt::print("Success!\n");
+    log::info("Success");
   }
   return 0;
 }
