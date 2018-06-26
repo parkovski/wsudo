@@ -11,7 +11,7 @@
 
 using namespace stdo;
 
-/// Convert exe + args to a single string, quoted if the exe contains spaces.
+// Convert exe + args to a single string, quoted if the exe contains spaces.
 std::wstring fullCommandLine(const wchar_t *exeName, const wchar_t *args) {
   size_t exelen = wcslen(exeName);
   size_t arglen = args ? wcslen(args) : 0;
@@ -40,9 +40,9 @@ std::wstring fullCommandLine(const wchar_t *exeName, const wchar_t *args) {
   return argsFull;
 }
 
-/// Duplicate this process' token into a new primary token.
-DWORD getPrimaryToken(HStdHandle &token) {
-  HStdHandle currentToken;
+// Duplicate this process' token into a new primary token.
+DWORD getPrimaryToken(HObject &token) {
+  HObject currentToken;
   log::trace("Creating primary token from current process.");
   if (
     !OpenProcessToken(GetCurrentProcess(), TOKEN_ALL_ACCESS, &currentToken) ||
@@ -109,12 +109,12 @@ DWORD childProcess(DWORD pid, const wchar_t *exeName, const wchar_t *args) {
     ntdll.get<nt::NtSetInformationProcess_t>("NtSetInformationProcess");
 
   log::trace("Opening remote process with PROCESS_ALL_ACCESS.");
-  HStdHandle process;
+  HObject process;
   if (!(process = OpenProcess(PROCESS_ALL_ACCESS, false, pid))) {
     return GetLastError();
   }
 
-  HStdHandle token;
+  HObject token;
   err.win32 = getPrimaryToken(token);
   if (err.win32) { return err.win32; }
 
@@ -222,14 +222,11 @@ DWORD childProcess(DWORD pid, const wchar_t *exeName, const wchar_t *args) {
   return ERROR_SUCCESS;
 }
 
-std::shared_ptr<spdlog::logger> stdo::log::g_outLogger;
-std::shared_ptr<spdlog::logger> stdo::log::g_errLogger;
-
 int wmain(int argc, wchar_t *argv[]) {
-  stdo::log::g_outLogger = spdlog::stdout_color_mt("stdo.out");
-  stdo::log::g_errLogger = spdlog::stderr_color_mt("stdo.err");
-  log::g_errLogger->set_level(spdlog::level::warn);
+  log::g_outLogger = spdlog::stdout_color_mt("stdo.out");
   log::g_outLogger->set_level(spdlog::level::trace);
+  log::g_errLogger = spdlog::stderr_color_mt("stdo.err");
+  log::g_errLogger->set_level(spdlog::level::warn);
   STDO_SCOPEEXIT { spdlog::drop_all(); };
 
   log::info("Hello from server");

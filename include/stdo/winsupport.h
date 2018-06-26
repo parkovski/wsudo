@@ -5,23 +5,14 @@
 #include <system_error>
 #include <string>
 #include <string_view>
-#include <codecvt>
 #include <optional>
 
-#pragma warning(push)
-#pragma warning(disable: 4996) // codecvt deprecation warning
+namespace stdo {
 
-std::string to_utf8(std::wstring_view utf16str) {
-  return std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>, wchar_t>{}
-          .to_bytes(&utf16str.front(), &utf16str.back() + 1);
-}
+std::string to_utf8(std::wstring_view utf16str);
+std::wstring to_utf16(std::string_view utf8str);
 
-std::wstring to_utf16(std::string_view utf8str) {
-  return std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>, wchar_t>{}
-            .from_bytes(&utf8str.front(), &utf8str.back() + 1);
-}
-
-#pragma warning(pop)
+bool setThreadName(const wchar_t *name);
 
 class module_load_error : public std::system_error {
 public:
@@ -40,6 +31,7 @@ public:
   {}
 };
 
+// Wrapper for calling dynamically into modules already loaded in this process.
 class LinkedModule {
   std::string _name;
   HMODULE _module;
@@ -79,20 +71,16 @@ public:
   }
 };
 
-bool setThreadName(const wchar_t *name) {
-  try {
-    return
-      LinkedModule(L"kernel32.dll")
-        .get<decltype(&SetThreadDescription)>("SetThreadDescription")
-        (GetCurrentThread(), name) == S_OK;
-  } catch (module_load_error &) {
-    return false;
-  }
-}
-
+// RAII wrapper around Windows HANDLE values.
 template<typename H, auto Free>
 class Handle {
   H _handle;
+
+  void free() {
+    if (_handle) {
+      Free(_handle);
+    }
+  }
 
 public:
   Handle() noexcept : _handle() {}
@@ -100,28 +88,22 @@ public:
   Handle(Handle<H, Free> &&other) noexcept : _handle(other.take()) {}
 
   ~Handle() {
-    if (_handle) {
-      Free(_handle);
-    }
-  }
-
-  Handle<H, Free> &operator=(H handle) {
-    return replace(handle);
+    free();
   }
 
   Handle<H, Free> &operator=(Handle<H, Free> &&other) {
-    return replace(other.take());
+    free();
+    _handle = other.take();
+    return *this;
   }
 
-  Handle<H, Free> &replace(H newHandle = nullptr) {
-    if (_handle) {
-      Free(_handle);
-    }
+  Handle<H, Free> &operator=(H newHandle) {
+    free();
     _handle = newHandle;
     return *this;
   }
 
-  /// Careful: Easy to leak resources with this.
+  // Careful: Easy to leak resources with this.
   H &operator*() {
     return _handle;
   }
@@ -130,7 +112,7 @@ public:
     return _handle;
   }
 
-  /// Careful: Easy to leak resources with this.
+  // Careful: Easy to leak resources with this.
   H *operator&() {
     return &_handle;
   }
@@ -139,7 +121,7 @@ public:
     return &_handle;
   }
 
-  /// Release the handle without freeing it.
+  // Release the handle without freeing it.
   H take() {
     auto handle = _handle;
     _handle = nullptr;
@@ -159,6 +141,8 @@ public:
   }
 };
 
-using HStdHandle = Handle<HANDLE, CloseHandle>;
+using HObject = Handle<HANDLE, CloseHandle>;
+
+} // namespace stdo
 
 #endif // STDO_WINSUPPORT_H

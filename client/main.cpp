@@ -1,7 +1,12 @@
+#include "stdo/stdo.h"
+#include "stdo/winsupport.h"
+
 #include <fmt/format.h>
 #include <Windows.h>
 #include <string>
 #include <cstdio>
+
+using namespace stdo;
 
 DWORD WINAPI Test(LPVOID p) {
   fmt::print("Hello from test thread\n");
@@ -37,6 +42,12 @@ DWORD WINAPI Test(LPVOID p) {
 }
 
 int wmain(int argc, wchar_t *argv[]) {
+  log::g_outLogger = spdlog::stdout_color_mt("stdo.out");
+  log::g_outLogger->set_level(spdlog::level::trace);
+  log::g_errLogger = spdlog::stderr_color_mt("stdo.err");
+  log::g_errLogger->set_level(spdlog::level::warn);
+  STDO_SCOPEEXIT { spdlog::drop_all(); };
+
   fmt::print(
     "Hello from client. I am process {0}; &Test = {1} (0x{1:X})\nEnter to exit.\n",
     GetCurrentProcessId(), reinterpret_cast<unsigned long long>(&Test)

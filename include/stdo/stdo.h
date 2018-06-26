@@ -73,6 +73,8 @@ namespace detail {
 #define STDO_CONCAT2(a,b) STDO_CONCAT_IMPL(a,b)
 #define STDO_CONCAT3(a,b,c) STDO_CONCAT2(STDO_CONCAT2(a,b),c)
 #define STDO_CONCAT4(a,b,c,d) STDO_CONCAT2(STDO_CONCAT2(a,b),STDO_CONCAT2(c,d))
+
+/// Usage: STDO_SCOPEEXIT { capture-by-ref lambda body };
 #define STDO_SCOPEEXIT \
   auto STDO_CONCAT4(_scopeExit_, __func__, _, __LINE__) = \
     ::stdo::detail::ScopeExitHelper{} && [&]()

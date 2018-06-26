@@ -31,8 +31,10 @@ find_package(Clara REQUIRED)
 find_package(sodium REQUIRED)
 find_package(catch2)
 
-include_directories(${PROJECT_SOURCE_DIR}/include)
-link_libraries(spdlog::spdlog fmt::fmt cereal Clara sodium)
+set(COMMON_SRC
+  common/logging.cpp
+  common/winsupport.cpp
+)
 
 set(CLIENT_SRC
   client/main.cpp
@@ -40,7 +42,18 @@ set(CLIENT_SRC
 
 set(SERVICE_SRC
   service/main.cpp
+  service/server.cpp
 )
 
+include_directories(${PROJECT_SOURCE_DIR}/include)
+set(STDO_LIBRARIES
+  spdlog::spdlog fmt::fmt cereal Clara sodium
+)
+
+add_library(stdo_common STATIC ${COMMON_SRC})
 add_executable(stdo ${CLIENT_SRC})
 add_executable(TokenServer ${SERVICE_SRC})
+
+target_link_libraries(stdo_common ${STDO_LIBRARIES})
+target_link_libraries(stdo stdo_common)
+target_link_libraries(TokenServer stdo_common)
