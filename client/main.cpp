@@ -1,13 +1,14 @@
 #include "stdo/stdo.h"
-#include "stdo/winsupport.h"
+// #include "stdo/winsupport.h"
 
 #include <fmt/format.h>
 #include <Windows.h>
 #include <string>
-#include <cstdio>
+// #include <cstdio>
 
 using namespace stdo;
 
+#if 0
 DWORD WINAPI Test(LPVOID p) {
   fmt::print("Hello from test thread\n");
   STARTUPINFOW si{};
@@ -40,6 +41,7 @@ DWORD WINAPI Test(LPVOID p) {
   CloseHandle(pi.hProcess);
   return 0;
 }
+#endif
 
 int wmain(int argc, wchar_t *argv[]) {
   log::g_outLogger = spdlog::stdout_color_mt("stdo.out");
@@ -48,13 +50,22 @@ int wmain(int argc, wchar_t *argv[]) {
   log::g_errLogger->set_level(spdlog::level::warn);
   STDO_SCOPEEXIT { spdlog::drop_all(); };
 
-  fmt::print(
-    "Hello from client. I am process {0}; &Test = {1} (0x{1:X})\nEnter to exit.\n",
-    GetCurrentProcessId(), reinterpret_cast<unsigned long long>(&Test)
-  );
-  WaitForSingleObject(GetCurrentProcess(), INFINITE);
-  // while (std::getchar() != '\n') {
-  //   //
-  // }
+  std::string message{fmt::format("Hello from client process {}", GetCurrentProcessId())};
+  log::info("Sending message: {}", message);
+  std::string response;
+  response.reserve(256);
+  DWORD bytesRead;
+  if (CallNamedPipeW(
+    L"\\\\.\\pipe\\stdo_tokreq",
+    message.data(), (DWORD)message.length(),
+    response.data(), 256,
+    &bytesRead, 5000
+  ))
+  {
+    response.resize(bytesRead);
+    log::info("Server responded: {}", response);
+  } else {
+    log::warn("CallNamedPipeW failed: 0x{:X}.", GetLastError());
+  }
   return 0;
 }

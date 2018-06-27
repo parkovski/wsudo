@@ -80,3 +80,4 @@ namespace detail {
     ::stdo::detail::ScopeExitHelper{} && [&]()
 
 #endif // STDO_STDO_H
+
