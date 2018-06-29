@@ -12,8 +12,6 @@
 namespace stdo::server {
 
 constexpr int MaxPipeConnections = 5;
-constexpr int PipeInBufferSize = 1024;
-constexpr int PipeOutBufferSize = 1024;
 constexpr int PipeDefaultTimeout = 0;
 
 enum Status : int {
@@ -124,7 +122,7 @@ public:
     : _overlapped(std::make_unique<OVERLAPPED>())
   {
     _overlapped->hEvent = CreateEventW(nullptr, true, false, nullptr);
-    _buffer.reserve(PipeOutBufferSize);
+    _buffer.reserve(PipeBufferSize);
   }
 
   EventHandlerOverlapped(EventHandlerOverlapped &&other) = default;

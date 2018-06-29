@@ -32,7 +32,7 @@ find_package(sodium REQUIRED)
 find_package(catch2)
 
 set(COMMON_SRC
-  common/logging.cpp
+  common/common.cpp
   common/winsupport.cpp
 )
 

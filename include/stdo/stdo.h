@@ -9,7 +9,16 @@
 #include "spdlog/spdlog.h"
 #pragma warning(pop)
 
+#include <cstdint>
+
 namespace stdo {
+
+extern const wchar_t *PipeName;
+extern const wchar_t *PipeFullPath;
+constexpr size_t PipeBufferSize = 1024;
+
+extern const char *MsgHeaderCredential;
+extern const char *MsgHeaderBless;
 
 namespace log {
 

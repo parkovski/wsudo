@@ -1,13 +1,14 @@
 #include "stdo/stdo.h"
 #include "stdo/server.h"
 
-namespace stdo::server {
+using namespace stdo;
+using namespace stdo::server;
 
 EventStatus EventHandlerOverlapped::beginRead(HANDLE hFile) {
   _overlapped->Offset = 0;
   _overlapped->OffsetHigh = 0;
-  _buffer.resize(PipeOutBufferSize);
-  if (ReadFile(hFile, _buffer.data(), PipeOutBufferSize, nullptr,
+  _buffer.resize(PipeBufferSize);
+  if (ReadFile(hFile, _buffer.data(), PipeBufferSize, nullptr,
                _overlapped.get()))
   {
     return EventStatus::Finished;
@@ -139,11 +140,24 @@ ClientConnectionHandler::respond() {
     return nullptr;
   }
 
-  _buffer.push_back(0);
-  log::debug("Client {}: received message: {}.", _clientId, _buffer.data());
+  char header[5];
+  std::memcpy(header, _buffer.data(), 4);
+  header[4] = 0;
+  log::debug("Client {}: received message: {}.", _clientId, header);
 
-  _buffer.resize(6);
-  std::memcpy(_buffer.data(), "Hello", 6);
+  Callback nextCb = &ClientConnectionHandler::reset;
+  if (!std::memcmp(header, MsgHeaderCredential, 4)) {
+    nextCb = &ClientConnectionHandler::read;
+    _buffer.resize(3);
+    std::memcpy(_buffer.data(), "Ok", 3);
+  } else if (!std::memcmp(header, MsgHeaderBless, 4)) {
+    _buffer.resize(3);
+    std::memcpy(_buffer.data(), "Ok", 3);
+  } else {
+    _buffer.resize(6);
+    std::memcpy(_buffer.data(), "Error", 6);
+  }
+
   switch (beginWrite(_connection)) {
   case EventStatus::InProgress:
     log::trace("Client {}: Write in progress.", _clientId);
@@ -153,10 +167,10 @@ ClientConnectionHandler::respond() {
     return nullptr;
   case EventStatus::Finished:
     log::trace("Client {}: Write finished.", _clientId);
-    return reset();
+    return nextCb(this);
   }
 
-  return &ClientConnectionHandler::reset;
+  return nextCb;
 }
 
 ClientConnectionHandler::Callback
@@ -230,11 +244,11 @@ Status EventListener::eventLoop(DWORD timeout) {
 }
 
 #define FINISH(exitCode) do { config.status = exitCode; return; } while (false)
-void serverMain(Config &config) {
+void stdo::server::serverMain(Config &config) {
   HObject pipe{CreateNamedPipeW(config.pipeName.c_str(),
     PIPE_ACCESS_DUPLEX | FILE_FLAG_FIRST_PIPE_INSTANCE | FILE_FLAG_OVERLAPPED,
     PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_REJECT_REMOTE_CLIENTS,
-    MaxPipeConnections, PipeOutBufferSize, PipeInBufferSize,
+    MaxPipeConnections, PipeBufferSize, PipeBufferSize,
     PipeDefaultTimeout, nullptr
   )};
   if (!pipe) {
@@ -245,6 +259,4 @@ void serverMain(Config &config) {
   listener.push(ClientConnectionHandler{pipe, 1});
   FINISH(listener.eventLoop());
 }
-
-} // namespace stdo::server
 
