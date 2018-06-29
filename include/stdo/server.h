@@ -1,6 +1,7 @@
 #ifndef STDO_SERVER_H
 #define STDO_SERVER_H
 
+#include "stdo/stdo.h"
 #include "stdo/winsupport.h"
 
 #include <memory>
@@ -85,7 +86,7 @@ public:
   virtual ~EventHandler() { }
 
   virtual HANDLE event() const = 0;
-  virtual EventStatus operator()(EventListener &) = 0;
+  virtual EventStatus operator()() = 0;
 };
 
 class QuitHandler : public EventHandler {
@@ -100,7 +101,7 @@ public:
 
   HANDLE event() const override { return _quitEvent; }
 
-  EventStatus operator()(EventListener &) override {
+  EventStatus operator()() override {
     return EventStatus::Finished;
   }
 };
@@ -108,12 +109,22 @@ public:
 class EventHandlerOverlapped : public EventHandler {
 protected:
   std::unique_ptr<OVERLAPPED> _overlapped;
+  std::vector<char> _buffer;
+
+  void resetBuffer() { _buffer.clear(); }
+  EventStatus beginRead(HANDLE hFile);
+  EventStatus beginWrite(HANDLE hFile);
+  EventStatus endReadWrite(HANDLE hFile);
+
+  // Interprets GetOverlappedResult and resets the event on success.
+  DWORD getOverlappedResult(HANDLE hFile, DWORD *bytes = nullptr);
 
 public:
   explicit EventHandlerOverlapped() noexcept
     : _overlapped(std::make_unique<OVERLAPPED>())
   {
     _overlapped->hEvent = CreateEventW(nullptr, true, false, nullptr);
+    _buffer.reserve(PipeOutBufferSize);
   }
 
   EventHandlerOverlapped(EventHandlerOverlapped &&other) = default;
@@ -129,52 +140,44 @@ public:
   HANDLE event() const override { return _overlapped->hEvent; }
 };
 
-class ClientConnectedHandler : public EventHandlerOverlapped {
-  Handle<HANDLE, DisconnectNamedPipe> _connection{};
-  int _state;
+using HPipeConnection = Handle<HANDLE, DisconnectNamedPipe>;
+class ClientConnectionHandler : public EventHandlerOverlapped {
+  struct Callback {
+    using Function = Callback (ClientConnectionHandler::*)();
 
-  ClientConnectedHandler() noexcept
-    : _state(0)
-  { }
+    Callback() noexcept : function(nullptr) {}
+    Callback(Function function) noexcept : function(function) {}
+    Callback(const Callback &) = default;
+    Callback &operator=(const Callback &) = default;
 
-public:
-  static EventStatus create(HANDLE pipe, EventListener &listener);
+    Callback operator()(ClientConnectionHandler *self) {
+      return (self->*function)();
+    }
 
-  HANDLE pipe() const {
-    return _connection;
-  }
+    explicit operator bool() const { return !!function; }
 
-  void finish() {
-    _state = 2;
-    SetEvent(_overlapped->hEvent);
-  }
+  private:
+    Function function;
+  };
 
-  EventStatus operator()(EventListener &listener) override;
-};
+  int _clientId;
+  HPipeConnection _connection{};
+  Callback _callback{};
 
-class ClientRecvHandler : public EventHandlerOverlapped {
-  std::vector<unsigned char> _buffer;
-  std::reference_wrapper<ClientConnectedHandler> _connection;
-
-  ClientRecvHandler(ClientConnectedHandler &connection) noexcept
-    : _connection(connection)
-  {
-    _buffer.resize(PipeOutBufferSize);
-  }
-
-  // Returns positive on successful read, 0 for read pending, and -1 for error.
-  long read();
+  Callback connect(HANDLE pipe);
+  Callback read();
+  Callback respond();
+  Callback reset();
 
 public:
-  ClientRecvHandler(ClientRecvHandler &&) = default;
-  ClientRecvHandler &operator=(ClientRecvHandler &&) = default;
+  explicit ClientConnectionHandler(HANDLE pipe, int clientId) noexcept;
 
-  static EventStatus create(
-    ClientConnectedHandler &connection,
-    EventListener &listener
-  ) noexcept;
-
-  EventStatus operator()(EventListener &listener) override;
+  EventStatus operator()() override {
+    if (!_callback || !(_callback = _callback(this))) {
+      return EventStatus::Failed;
+    }
+    return EventStatus::InProgress;
+  }
 };
 
 class EventListener {

@@ -53,7 +53,7 @@ int wmain(int argc, wchar_t *argv[]) {
   std::string message{fmt::format("Hello from client process {}", GetCurrentProcessId())};
   log::info("Sending message: {}", message);
   std::string response;
-  response.reserve(256);
+  response.resize(256);
   DWORD bytesRead;
   if (CallNamedPipeW(
     L"\\\\.\\pipe\\stdo_tokreq",

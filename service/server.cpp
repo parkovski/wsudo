@@ -3,6 +3,175 @@
 
 namespace stdo::server {
 
+EventStatus EventHandlerOverlapped::beginRead(HANDLE hFile) {
+  _overlapped->Offset = 0;
+  _overlapped->OffsetHigh = 0;
+  _buffer.resize(PipeOutBufferSize);
+  if (ReadFile(hFile, _buffer.data(), PipeOutBufferSize, nullptr,
+               _overlapped.get()))
+  {
+    return EventStatus::Finished;
+  } else if (GetLastError() == ERROR_IO_PENDING) {
+    return EventStatus::InProgress;
+  } else {
+    log::error("ReadFile failed.");
+    return EventStatus::Failed;
+  }
+}
+
+EventStatus EventHandlerOverlapped::beginWrite(HANDLE hFile) {
+  _overlapped->Offset = 0;
+  _overlapped->OffsetHigh = 0;
+  if (WriteFile(hFile, _buffer.data(), (DWORD)_buffer.size(), nullptr,
+                _overlapped.get()))
+  {
+    return EventStatus::Finished;
+  } else if (GetLastError() == ERROR_IO_PENDING) {
+    return EventStatus::InProgress;
+  } else {
+    log::error("WriteFile failed.");
+    return EventStatus::Failed;
+  }
+}
+
+EventStatus EventHandlerOverlapped::endReadWrite(HANDLE hFile) {
+  DWORD bytesTransferred;
+  DWORD error = getOverlappedResult(hFile, &bytesTransferred);
+  if (error == ERROR_SUCCESS) {
+    _buffer.resize(bytesTransferred);
+    return EventStatus::Finished;
+  } else if (error == ERROR_IO_INCOMPLETE) {
+    return EventStatus::InProgress;
+  }
+  log::error("GetOverlappedResult failed: 0x{:X}", error);
+  return EventStatus::Failed;
+}
+
+DWORD EventHandlerOverlapped::getOverlappedResult(HANDLE hFile, DWORD *bytes) {
+  DWORD bytesTransferred;
+  DWORD error;
+  if (
+    GetOverlappedResult(hFile, _overlapped.get(), &bytesTransferred, false) ||
+    (error = GetLastError()) == ERROR_HANDLE_EOF
+  )
+  {
+    error = ERROR_SUCCESS;
+    ResetEvent(_overlapped->hEvent);
+  } else {
+    bytesTransferred = 0;
+  }
+  if (bytes) {
+    *bytes = bytesTransferred;
+  }
+  return error;
+}
+
+ClientConnectionHandler::ClientConnectionHandler(HANDLE pipe, int clientId)
+  noexcept
+  : _clientId{clientId}, _callback{connect(pipe)}
+{
+}
+
+ClientConnectionHandler::Callback
+ClientConnectionHandler::connect(HANDLE pipe) {
+  ConnectNamedPipe(pipe, _overlapped.get());
+
+  switch (GetLastError()) {
+  case ERROR_IO_PENDING:
+    log::trace("Client {}: scheduling client connection callback.", _clientId);
+    break;
+  case ERROR_PIPE_CONNECTED:
+    log::trace("Client {}: already connected; setting read event.", _clientId);
+    SetEvent(_overlapped->hEvent);
+    break;
+  default:
+    // We don't have an active connection, so keep the callback and pipe handle
+    // null and set the event that will return failed and remove this object
+    // from the event queue.
+    log::error("Client {}: ConnectNamedPipe failed.", _clientId);
+    SetEvent(_overlapped->hEvent);
+    return nullptr;
+  }
+
+  _connection = pipe;
+  return &ClientConnectionHandler::read;
+}
+
+ClientConnectionHandler::Callback
+ClientConnectionHandler::read() {
+  if (getOverlappedResult(_connection) != ERROR_SUCCESS) {
+    log::error("Client {}: error finalizing connection.", _clientId);
+    return nullptr;
+  }
+  switch (beginRead(_connection)) {
+  case EventStatus::Finished:
+    log::trace("Client {}: Read ready; responding.", _clientId);
+    return respond();
+  case EventStatus::InProgress:
+    log::trace("Client {}: Scheduling async response.", _clientId);
+    return &ClientConnectionHandler::respond;
+  default:
+    log::error("Client {}: Read failed.", _clientId);
+    return nullptr;
+  }
+}
+
+ClientConnectionHandler::Callback
+ClientConnectionHandler::respond() {
+  switch (endReadWrite(_connection)) {
+  case EventStatus::Finished:
+    break;
+  case EventStatus::InProgress:
+    switch (beginRead(_connection)) {
+    case EventStatus::Finished:
+      break;
+    case EventStatus::InProgress:
+      // Still more to read.
+      log::trace("Client {}: More data awaiting read.", _clientId);
+      return &ClientConnectionHandler::read;
+    default:
+      log::error("Client {}: Read failed.", _clientId);
+      return nullptr;
+    }
+    break;
+  case EventStatus::Failed:
+    log::error("Client {}: Finalizing read failed.", _clientId);
+    return nullptr;
+  }
+
+  _buffer.push_back(0);
+  log::debug("Client {}: received message: {}.", _clientId, _buffer.data());
+
+  _buffer.resize(6);
+  std::memcpy(_buffer.data(), "Hello", 6);
+  switch (beginWrite(_connection)) {
+  case EventStatus::InProgress:
+    log::trace("Client {}: Write in progress.", _clientId);
+    break;
+  case EventStatus::Failed:
+    log::error("Client {}: Write failed.", _clientId);
+    return nullptr;
+  case EventStatus::Finished:
+    log::trace("Client {}: Write finished.", _clientId);
+    return reset();
+  }
+
+  return &ClientConnectionHandler::reset;
+}
+
+ClientConnectionHandler::Callback
+ClientConnectionHandler::reset() {
+  if (endReadWrite(_connection) != EventStatus::Finished) {
+    return nullptr;
+  }
+
+  log::trace("Client {}: Resetting connection.", _clientId);
+  resetBuffer();
+  HANDLE pipe = _connection;
+  _connection = nullptr;
+  return connect(pipe);
+}
+
 std::unique_ptr<EventHandler> EventListener::remove(size_t index) {
   auto elem = std::move(_handlers[index]);
   _events.erase(_events.cbegin() + index);
@@ -28,7 +197,7 @@ Status EventListener::eventLoop(DWORD timeout) {
       if (index == ExitLoopIndex) {
         return StatusOk;
       }
-      switch ((*_handlers[index])(*this)) {
+      switch ((*_handlers[index])()) {
       case EventStatus::InProgress:
         log::trace("Event #{} returned InProgress.", index);
         ResetEvent(_events[index]);
@@ -60,90 +229,6 @@ Status EventListener::eventLoop(DWORD timeout) {
   }
 }
 
-EventStatus ClientConnectedHandler::create(HANDLE pipe, EventListener &listener) {
-  ClientConnectedHandler handler;
-  ConnectNamedPipe(pipe, handler._overlapped.get());
-  handler._connection = pipe;
-  switch (GetLastError()) {
-  case ERROR_IO_PENDING:
-    log::trace("Scheduling overlapped IO event.");
-    listener.push(std::move(handler));
-    return EventStatus::InProgress;
-  case ERROR_PIPE_CONNECTED:
-    log::trace("Pipe already connected, calling handler immediately.");
-    return handler(listener);
-  default:
-    log::warn("Couldn't connect to pipe.");
-    return EventStatus::Failed;
-  }
-}
-
-EventStatus ClientConnectedHandler::operator()(EventListener &listener) {
-  switch (_state) {
-  case 0: {
-    DWORD bytesTransferred;
-    if (GetOverlappedResult(pipe(), _overlapped.get(), &bytesTransferred, false)) {
-      log::trace("Pipe connected, trying to read.");
-      _state = 1;
-      return ClientRecvHandler::create(*this, listener);
-    } else {
-      return EventStatus::Failed;
-    }
-  }
-  case 1:
-    return EventStatus::InProgress;
-  case 2:
-    return EventStatus::Finished;
-  default:
-    return EventStatus::Failed;
-  }
-}
-
-long ClientRecvHandler::read() {
-  DWORD bytesRead;
-  if (ReadFile(_connection.get().pipe(), _buffer.data(), PipeOutBufferSize,
-               &bytesRead, _overlapped.get()) && bytesRead > 0) {
-    _buffer.resize(bytesRead + 1);
-    _buffer.back() = 0;
-    log::trace("Read {} bytes from client", bytesRead);
-    DWORD bytesWritten;
-    WriteFile(_connection.get().pipe(), "sup", 3, &bytesWritten, nullptr);
-    return (long)bytesRead;
-  } else if (GetLastError() == ERROR_IO_PENDING) {
-    log::trace("Read pending...");
-    return 0;
-  } else {
-    log::warn("Read failed.");
-    return -1;
-  }
-}
-
-EventStatus ClientRecvHandler::create(
-  ClientConnectedHandler &connection,
-  EventListener &listener
-) noexcept
-{
-  ClientRecvHandler recv{connection};
-  auto status = recv(listener);
-  if (status == EventStatus::InProgress) {
-    log::trace("Scheduling read callback");
-    listener.push(std::move(recv));
-  }
-  return status;
-}
-
-EventStatus ClientRecvHandler::operator()(EventListener &listener) {
-  long result = read();
-  if (result == 0) {
-    return EventStatus::InProgress;
-  } else if (result < 0) {
-    return EventStatus::Failed;
-  }
-  log::info("Received message: {}", reinterpret_cast<char *>(_buffer.data()));
-  _connection.get().finish();
-  return EventStatus::Finished;
-}
-
 #define FINISH(exitCode) do { config.status = exitCode; return; } while (false)
 void serverMain(Config &config) {
   HObject pipe{CreateNamedPipeW(config.pipeName.c_str(),
@@ -157,7 +242,7 @@ void serverMain(Config &config) {
   }
 
   EventListener listener{QuitHandler{config.quitEvent}};
-  ClientConnectedHandler::create(pipe, listener);
+  listener.push(ClientConnectionHandler{pipe, 1});
   FINISH(listener.eventLoop());
 }
 

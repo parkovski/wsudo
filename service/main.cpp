@@ -296,6 +296,11 @@ int wmain(int argc, wchar_t *argv[]) {
     HObject{CreateEventW(nullptr, true, false, nullptr)}
   };
   gs_quitEventHandle = config.quitEvent;
+
+  HANDLE hStdin = GetStdHandle(STD_INPUT_HANDLE);
+  DWORD stdinMode;
+  GetConsoleMode(hStdin, &stdinMode);
+  SetConsoleMode(hStdin, stdinMode | ENABLE_PROCESSED_INPUT);
   if (!SetConsoleCtrlHandler(nullptr, false) ||
       !SetConsoleCtrlHandler(consoleControlHandler, true))
   {
@@ -303,8 +308,10 @@ int wmain(int argc, wchar_t *argv[]) {
   } else {
     log::info("Starting server. Press Ctrl-C to exit.");
   }
+
   std::thread serverThread{&server::serverMain, std::ref(config)};
   serverThread.join();
   log::info("Event loop returned {}", server::statusToString(config.status));
+  SetConsoleMode(hStdin, stdinMode);
   return 0;
 }
