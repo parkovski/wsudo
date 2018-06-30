@@ -237,7 +237,7 @@ struct Config {
   HObject quitEvent;
 
   Config(std::wstring pipeName, HObject quitEvent)
-    : pipeName(std::move(pipeName.insert(0, L"\\\\.\\pipe\\"))),
+    : pipeName(std::move(pipeName)),
       quitEvent(std::move(quitEvent))
   {}
 

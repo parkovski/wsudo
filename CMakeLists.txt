@@ -26,10 +26,10 @@ list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
 
 find_package(spdlog CONFIG REQUIRED)
 find_package(fmt REQUIRED)
-find_package(cereal REQUIRED)
-find_package(Clara REQUIRED)
-find_package(sodium REQUIRED)
-find_package(catch2)
+# find_package(cereal REQUIRED)
+# find_package(Clara REQUIRED)
+# find_package(sodium REQUIRED)
+# find_package(catch2)
 
 set(COMMON_SRC
   common/common.cpp
@@ -47,7 +47,7 @@ set(SERVICE_SRC
 
 include_directories(${PROJECT_SOURCE_DIR}/include)
 set(STDO_LIBRARIES
-  spdlog::spdlog fmt::fmt cereal Clara sodium
+  spdlog::spdlog fmt::fmt-header-only
 )
 
 add_library(stdo_common STATIC ${COMMON_SRC})

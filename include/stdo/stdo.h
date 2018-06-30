@@ -13,7 +13,6 @@
 
 namespace stdo {
 
-extern const wchar_t *PipeName;
 extern const wchar_t *PipeFullPath;
 constexpr size_t PipeBufferSize = 1024;
 

@@ -112,11 +112,12 @@ bool ClientConnection::readServerMessage() {
     return true;
   }
   if (!std::memcmp(header, SMsgHeaderInvalidMessage, 4)) {
-    std::wcerr << L"Invalid message";
+    std::wcerr << L"Invalid message.";
   } else if (!std::memcmp(header, SMsgHeaderInternalError, 4)) {
-    std::wcerr << L"Internal server error";
+    std::wcerr << L"Internal server error.";
   } else if (!std::memcmp(header, SMsgHeaderAccessDenied, 4)) {
-    std::wcerr << L"Access denied";
+    std::wcerr << L"Access denied; this incident will be reported.";
+    // TODO: Send email to police.
   }
   if (_buffer.size() > 4) {
     _buffer.push_back(0);
@@ -129,17 +130,17 @@ bool ClientConnection::readServerMessage() {
 
 // FIXME: This is a hack and doesn't actually handle certain cases.
 std::wstring fullCommandLine(int argc, wchar_t *argv[]) {
-	std::wstring cl;
-	for (int i = 0; i < argc; ++i) {
-		if (wcschr(argv[i], L' ')) {
-			cl.push_back(L'"');
-			cl.append(argv[i]);
-			cl.push_back(L'"');
-		} else {
-			cl.append(argv[i]);
-		}
-		cl.push_back(L' ');
-	}
+  std::wstring cl;
+  for (int i = 0; i < argc; ++i) {
+    if (wcschr(argv[i], L' ')) {
+      cl.push_back(L'"');
+      cl.append(argv[i]);
+      cl.push_back(L'"');
+    } else {
+      cl.append(argv[i]);
+    }
+    cl.push_back(L' ');
+  }
 
   return cl;
 }
@@ -162,11 +163,6 @@ std::pair<HANDLE, HANDLE> createProcess(int argc, wchar_t *argv[]) {
     return {nullptr, nullptr};
   }
   return {pi.hProcess, pi.hThread};
-}
-
-void incidentReport() {
-  std::wcerr << L"Token request denied; this incident will be reported.\n";
-  // TODO: Send email to police.
 }
 
 int wmain(int argc, wchar_t *argv[]) {
@@ -248,7 +244,6 @@ int wmain(int argc, wchar_t *argv[]) {
   u8creds.push_back(0);
   u8creds.append(to_utf8(password));
   if (!conn.negotiate(u8creds.data(), u8creds.length())) {
-    incidentReport();
     return ClientExitAccessDenied;
   }
 
@@ -263,7 +258,7 @@ int wmain(int argc, wchar_t *argv[]) {
     TerminateProcess(process, 1);
     CloseHandle(thread);
     CloseHandle(process);
-    return ClientExitAccessDenied;
+    return ClientExitSystemError;
   }
 
   ResumeThread(thread);
