@@ -379,7 +379,8 @@ bool ClientConnectionHandler::bless(HANDLE remoteHandle) {
                getSystemStatusString(GetLastError()));
     return false;
   }
-  log::trace("Trying to duplicate handle 0x{:X}", reinterpret_cast<size_t>(remoteHandle));
+  log::trace("Trying to duplicate remote handle 0x{:X}",
+						 reinterpret_cast<size_t>(remoteHandle));
   if (!DuplicateHandle(clientProcess, remoteHandle, GetCurrentProcess(),
                        &localHandle, PROCESS_SET_INFORMATION, false, 0))
   {

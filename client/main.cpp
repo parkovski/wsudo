@@ -78,14 +78,8 @@ bool ClientConnection::bless(HANDLE process) {
   _buffer.resize(messageLength);
   assert(strlen(MsgHeaderBless) == 4);
   std::memcpy(_buffer.data(), MsgHeaderBless, 4);
-  /*auto moduleBase = GetModuleHandleW(nullptr);
-  process =
-    reinterpret_cast<HANDLE>(
-      reinterpret_cast<size_t>(process) - reinterpret_cast<size_t>(moduleBase)
-    );*/
   std::memcpy(_buffer.data() + 4, &process, sizeof(HANDLE));
   log::trace("Writing bless message, size {}", messageLength);
-  log::trace("Sending handle 0x{:X}", reinterpret_cast<size_t>(process));
   if (
     !WriteFile(_pipe, _buffer.data(), (DWORD)messageLength, &bytes, nullptr) ||
     bytes != messageLength
@@ -133,6 +127,23 @@ bool ClientConnection::readServerMessage() {
   return false;
 }
 
+// FIXME: This is a hack and doesn't actually handle certain cases.
+std::wstring fullCommandLine(int argc, wchar_t *argv[]) {
+	std::wstring cl;
+	for (int i = 0; i < argc; ++i) {
+		if (wcschr(argv[i], L' ')) {
+			cl.push_back(L'"');
+			cl.append(argv[i]);
+			cl.push_back(L'"');
+		} else {
+			cl.append(argv[i]);
+		}
+		cl.push_back(L' ');
+	}
+
+  return cl;
+}
+
 // Returns {process, thread}
 std::pair<HANDLE, HANDLE> createProcess(int argc, wchar_t *argv[]) {
   STARTUPINFOW si{};
@@ -142,10 +153,9 @@ std::pair<HANDLE, HANDLE> createProcess(int argc, wchar_t *argv[]) {
   si.hStdError = GetStdHandle(STD_ERROR_HANDLE);
   si.dwFlags = STARTF_USESTDHANDLES;
   PROCESS_INFORMATION pi;
-  const wchar_t *name = L"C:\\Windows\\System32\\cmd.exe";
-  std::wstring mutableName{name};
-  mutableName.push_back(0);
-  if (!CreateProcessW(name, mutableName.data(), nullptr, nullptr, true,
+  std::wstring commandLine{fullCommandLine(argc, argv)};
+  *(commandLine.end() - 1) = 0;
+  if (!CreateProcessW(argv[0], commandLine.data(), nullptr, nullptr, true,
                       CREATE_UNICODE_ENVIRONMENT | CREATE_SUSPENDED,
                       nullptr, nullptr, &si, &pi))
   {
@@ -166,14 +176,14 @@ int wmain(int argc, wchar_t *argv[]) {
   log::g_errLogger->set_level(spdlog::level::warn);
   STDO_SCOPEEXIT { spdlog::drop_all(); };
 
-  // if (argc < 2) {
-  //   std::wcerr << L"Usage: stdo <program> <args>\n";
-  //   return ClientExitInvalidUsage;
-  // }
+  if (argc < 2) {
+    std::wcerr << L"Usage: stdo <program> <args>\n";
+    return ClientExitInvalidUsage;
+  }
 
   ClientConnection conn{PipeFullPath};
   if (!conn) {
-    log::error("Token server connection failed.");
+    std::wcerr << L"Connection to server failed.\n";
     return ClientExitServerNotFound;
   }
 
@@ -238,7 +248,6 @@ int wmain(int argc, wchar_t *argv[]) {
   u8creds.push_back(0);
   u8creds.append(to_utf8(password));
   if (!conn.negotiate(u8creds.data(), u8creds.length())) {
-    log::trace("Negotiate failed.");
     incidentReport();
     return ClientExitAccessDenied;
   }
@@ -250,8 +259,7 @@ int wmain(int argc, wchar_t *argv[]) {
   }
 
   if (!conn.bless(process)) {
-    log::trace("Bless failed.");
-    incidentReport();
+    std::wcerr << L"Server failed to adjust privileges\n";
     TerminateProcess(process, 1);
     CloseHandle(thread);
     CloseHandle(process);
