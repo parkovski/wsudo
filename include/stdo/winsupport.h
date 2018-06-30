@@ -14,21 +14,35 @@ std::wstring to_utf16(std::string_view utf8str);
 
 bool setThreadName(const wchar_t *name);
 
-class module_load_error : public std::system_error {
+std::string getSystemStatusString(DWORD status);
+
+class module_load_error : public std::exception {
+  DWORD _error;
+  std::string _message;
 public:
   explicit module_load_error(const char *module)
-    : std::system_error{
-      (int)GetLastError(), std::system_category(),
-      std::string("Loading ") + module + "failed"
-    }
+    : _error{GetLastError()},
+      _message{
+        std::string("Module ") + module + " load failed: " +
+          getSystemStatusString(_error)
+      }
   {}
 
   explicit module_load_error(const char *module, const char *function)
-    : std::system_error{
-      (int)GetLastError(), std::system_category(),
-      std::string("Function ") + module + "!" + function + " not found"
-    }
+    : _error{GetLastError()},
+      _message{
+        std::string("Function ") + module + "!" + function + " not found: " +
+          getSystemStatusString(_error)
+      }
   {}
+
+  DWORD syscode() const {
+    return _error;
+  }
+
+  const char *what() const override {
+    return _message.c_str();
+  }
 };
 
 // Wrapper for calling dynamically into modules already loaded in this process.

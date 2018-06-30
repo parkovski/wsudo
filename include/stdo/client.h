@@ -33,8 +33,10 @@ public:
   bool good() const { return !!_pipe; }
   explicit operator bool() const { return good(); }
 
-  bool negotiate(const wchar_t *credentials, size_t length);
+  bool negotiate(const char *credentials, size_t length);
   bool bless(HANDLE process);
+
+  bool readServerMessage();
 };
 
 }

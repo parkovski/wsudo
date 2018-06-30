@@ -46,57 +46,91 @@ ClientConnection::ClientConnection(const wchar_t *pipeName) {
   }
 }
 
-bool ClientConnection::negotiate(const wchar_t *credentials, size_t length) {
+bool ClientConnection::negotiate(const char *credentials, size_t length) {
   DWORD bytes;
-  size_t messageLength = length * sizeof(wchar_t) + 4;
+  size_t messageLength = length + 4;
   _buffer.resize(messageLength);
   assert(strlen(MsgHeaderCredential) == 4);
   std::memcpy(_buffer.data(), MsgHeaderCredential, 4);
-  std::memcpy(_buffer.data() + 4, credentials, length * sizeof(wchar_t));
+  std::memcpy(_buffer.data() + 4, credentials, length);
   log::trace("Writing credential message, size {}", messageLength);
   if (
     !WriteFile(_pipe, _buffer.data(), (DWORD)messageLength, &bytes, nullptr) ||
     bytes != messageLength
   )
   {
+    log::error("Couldn't write negotiate message.");
     return false;
   }
 
   _buffer.resize(PipeBufferSize);
   if (!ReadFile(_pipe, _buffer.data(), PipeBufferSize, &bytes, nullptr)) {
+    log::error("Couldn't read server response.");
     return false;
   }
   _buffer.resize(bytes);
-  _buffer.push_back(0);
-  log::info("Negotiate response: {}", _buffer.data());
-  return true;
+  return readServerMessage();
 }
 
 bool ClientConnection::bless(HANDLE process) {
   DWORD bytes;
-  size_t messageLength = 4 + sizeof(uint64_t);
+  size_t messageLength = 4 + sizeof(HANDLE);
   _buffer.resize(messageLength);
-  uint64_t handle64 = (size_t)process;
   assert(strlen(MsgHeaderBless) == 4);
   std::memcpy(_buffer.data(), MsgHeaderBless, 4);
-  std::memcpy(_buffer.data() + 4, &handle64, sizeof(uint64_t));
+  /*auto moduleBase = GetModuleHandleW(nullptr);
+  process =
+    reinterpret_cast<HANDLE>(
+      reinterpret_cast<size_t>(process) - reinterpret_cast<size_t>(moduleBase)
+    );*/
+  std::memcpy(_buffer.data() + 4, &process, sizeof(HANDLE));
   log::trace("Writing bless message, size {}", messageLength);
+  log::trace("Sending handle 0x{:X}", reinterpret_cast<size_t>(process));
   if (
     !WriteFile(_pipe, _buffer.data(), (DWORD)messageLength, &bytes, nullptr) ||
     bytes != messageLength
   )
   {
+    log::error("Couldn't write bless message.");
     return false;
   }
 
   _buffer.resize(PipeBufferSize);
   if (!ReadFile(_pipe, _buffer.data(), PipeBufferSize, &bytes, nullptr)) {
+    log::error("Couldn't read server response.");
     return false;
   }
   _buffer.resize(bytes);
-  _buffer.push_back(0);
-  log::info("Bless response: {}", _buffer.data());
-  return true;
+  return readServerMessage();
+}
+
+bool ClientConnection::readServerMessage() {
+  if (_buffer.size() < 4) {
+    std::wcerr << L"Unknown server response.\n";
+    return false;
+  }
+  char header[5];
+  std::memcpy(header, _buffer.data(), 4);
+  header[4] = 0;
+  log::trace("Reading response with code {}.", header);
+  if (!std::memcmp(header, SMsgHeaderSuccess, 4)) {
+    // Don't print a success message - just start the process.
+    return true;
+  }
+  if (!std::memcmp(header, SMsgHeaderInvalidMessage, 4)) {
+    std::wcerr << L"Invalid message";
+  } else if (!std::memcmp(header, SMsgHeaderInternalError, 4)) {
+    std::wcerr << L"Internal server error";
+  } else if (!std::memcmp(header, SMsgHeaderAccessDenied, 4)) {
+    std::wcerr << L"Access denied";
+  }
+  if (_buffer.size() > 4) {
+    _buffer.push_back(0);
+    std::cout << ": " << (_buffer.data() + 4) << "\n";
+  } else {
+    std::wcout << L".\n";
+  }
+  return false;
 }
 
 // Returns {process, thread}
@@ -200,9 +234,10 @@ int wmain(int argc, wchar_t *argv[]) {
     std::wcin.sync();
   }
 
-  username.push_back(0);
-  username.append(password);
-  if (!conn.negotiate(username.data(), username.length())) {
+  auto u8creds = to_utf8(username);
+  u8creds.push_back(0);
+  u8creds.append(to_utf8(password));
+  if (!conn.negotiate(u8creds.data(), u8creds.length())) {
     log::trace("Negotiate failed.");
     incidentReport();
     return ClientExitAccessDenied;

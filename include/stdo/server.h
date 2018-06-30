@@ -8,6 +8,7 @@
 #include <type_traits>
 #include <exception>
 #include <vector>
+#include <string_view>
 
 namespace stdo::server {
 
@@ -161,11 +162,24 @@ class ClientConnectionHandler : public EventHandlerOverlapped {
   int _clientId;
   HPipeConnection _connection{};
   Callback _callback{};
+  HObject _userToken{};
+
+  void createResponse(const char *header,
+                      std::string_view message = std::string_view{});
 
   Callback connect(HANDLE pipe);
+  Callback finishConnect();
   Callback read();
+  Callback finishRead();
   Callback respond();
+  template<bool Loop>
+  Callback finishRespond();
   Callback reset();
+
+  // Returns true to read another message, false to reset the connection.
+  bool dispatchMessage();
+  bool tryToLogonUser(const char *username, const char *password);
+  bool bless(HANDLE remoteHandle);
 
 public:
   explicit ClientConnectionHandler(HANDLE pipe, int clientId) noexcept;
@@ -177,6 +191,14 @@ public:
     return EventStatus::InProgress;
   }
 };
+
+extern template
+ClientConnectionHandler::Callback
+ClientConnectionHandler::finishRespond<true>();
+
+extern template
+ClientConnectionHandler::Callback
+ClientConnectionHandler::finishRespond<false>();
 
 class EventListener {
   std::vector<HANDLE> _events;

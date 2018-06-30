@@ -30,5 +30,15 @@ bool setThreadName(const wchar_t *name) {
   }
 }
 
+std::string getSystemStatusString(DWORD status) {
+  std::string msg;
+  constexpr int bufferSize = 256;
+  msg.resize(bufferSize);
+  auto size = FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM, nullptr, status, 0,
+                             msg.data(), bufferSize, nullptr);
+  msg.resize(size - 1); // Forget the NUL.
+  return msg;
+}
+
 } // namespace stdo
 

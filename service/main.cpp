@@ -248,9 +248,7 @@ BOOL WINAPI consoleControlHandler(DWORD event) {
   }
 
   log::info("Received {} event, quitting.", eventName);
-  if (gs_quitEventHandle) {
-    SetEvent(gs_quitEventHandle);
-  } else {
+  if (!gs_quitEventHandle || !SetEvent(gs_quitEventHandle)) {
     log::warn("Can't notify server thread; forcing shutdown.");
     std::terminate();
   }

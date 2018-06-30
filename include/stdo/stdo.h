@@ -20,6 +20,11 @@ constexpr size_t PipeBufferSize = 1024;
 extern const char *MsgHeaderCredential;
 extern const char *MsgHeaderBless;
 
+extern const char *SMsgHeaderSuccess;
+extern const char *SMsgHeaderInvalidMessage;
+extern const char *SMsgHeaderInternalError;
+extern const char *SMsgHeaderAccessDenied;
+
 namespace log {
 
 extern std::shared_ptr<spdlog::logger> g_outLogger;
@@ -87,6 +92,10 @@ namespace detail {
 #define STDO_SCOPEEXIT \
   auto STDO_CONCAT4(_scopeExit_, __func__, _, __LINE__) = \
     ::stdo::detail::ScopeExitHelper{} && [&]()
+
+#define STDO_SCOPEEXIT_THIS \
+  auto STDO_CONCAT4(_scopeExit_, __func__, _, __LINE__) = \
+    ::stdo::detail::ScopeExitHelper{} && [&, this]()
 
 #endif // STDO_STDO_H
 
