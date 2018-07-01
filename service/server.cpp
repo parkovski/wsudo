@@ -380,7 +380,7 @@ bool ClientConnectionHandler::bless(HANDLE remoteHandle) {
     return false;
   }
   log::trace("Trying to duplicate remote handle 0x{:X}",
-						 reinterpret_cast<size_t>(remoteHandle));
+             reinterpret_cast<size_t>(remoteHandle));
   if (!DuplicateHandle(clientProcess, remoteHandle, GetCurrentProcess(),
                        &localHandle, PROCESS_SET_INFORMATION, false, 0))
   {
@@ -520,16 +520,16 @@ doWithSecurityAttributes(F fn) {
 void stdo::server::serverMain(Config &config) {
   HObject pipe{};
   if (!doWithSecurityAttributes([&](LPSECURITY_ATTRIBUTES sa) -> bool {
-		pipe = CreateNamedPipeW(config.pipeName.c_str(),
-														PIPE_ACCESS_DUPLEX |
-															FILE_FLAG_FIRST_PIPE_INSTANCE |
-															FILE_FLAG_OVERLAPPED,
-														PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE |
-															PIPE_REJECT_REMOTE_CLIENTS,
-														MaxPipeConnections, PipeBufferSize, PipeBufferSize,
-														PipeDefaultTimeout, sa);
-		return !!pipe;
-	}))
+    pipe = CreateNamedPipeW(config.pipeName.c_str(),
+                            PIPE_ACCESS_DUPLEX |
+                              FILE_FLAG_FIRST_PIPE_INSTANCE |
+                              FILE_FLAG_OVERLAPPED,
+                            PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE |
+                              PIPE_REJECT_REMOTE_CLIENTS,
+                            MaxPipeConnections, PipeBufferSize, PipeBufferSize,
+                            PipeDefaultTimeout, sa);
+    return !!pipe;
+  }))
   {
     FINISH(StatusCreatePipeFailed);
   }
