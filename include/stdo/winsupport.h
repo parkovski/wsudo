@@ -2,7 +2,7 @@
 #define STDO_WINSUPPORT_H
 
 #include <Windows.h>
-#include <system_error>
+#include <exception>
 #include <string>
 #include <string_view>
 #include <optional>

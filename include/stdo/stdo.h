@@ -89,11 +89,11 @@ namespace detail {
 
 /// Usage: STDO_SCOPEEXIT { capture-by-ref lambda body };
 #define STDO_SCOPEEXIT \
-  auto STDO_CONCAT4(_scopeExit_, __func__, _, __LINE__) = \
+  auto const &STDO_CONCAT4(_scopeExit_, __func__, _, __LINE__) = \
     ::stdo::detail::ScopeExitHelper{} && [&]()
 
 #define STDO_SCOPEEXIT_THIS \
-  auto STDO_CONCAT4(_scopeExit_, __func__, _, __LINE__) = \
+  auto const &STDO_CONCAT4(_scopeExit_, __func__, _, __LINE__) = \
     ::stdo::detail::ScopeExitHelper{} && [&, this]()
 
 #endif // STDO_STDO_H

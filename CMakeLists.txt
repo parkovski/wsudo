@@ -25,7 +25,7 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY_RELWITHDEBINFO ${CMAKE_RUNTIME_OUTPUT_DIRECTO
 list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
 
 find_package(spdlog CONFIG REQUIRED)
-find_package(fmt REQUIRED)
+find_package(fmt)
 # find_package(cereal REQUIRED)
 # find_package(Clara REQUIRED)
 # find_package(sodium REQUIRED)
@@ -45,14 +45,16 @@ set(SERVICE_SRC
   service/server.cpp
 )
 
-include_directories(${PROJECT_SOURCE_DIR}/include)
-set(STDO_LIBRARIES
-  spdlog::spdlog fmt::fmt-header-only
-)
-
 add_library(stdo_common STATIC ${COMMON_SRC})
 add_executable(stdo ${CLIENT_SRC})
 add_executable(TokenServer ${SERVICE_SRC})
+
+include_directories(${PROJECT_SOURCE_DIR}/include)
+
+set(STDO_LIBRARIES spdlog::spdlog)
+if(fmt_FOUND)
+  list(APPEND STDO_LIBRARIES fmt::fmt-header-only)
+endif()
 
 target_link_libraries(stdo_common ${STDO_LIBRARIES})
 target_link_libraries(stdo stdo_common)
