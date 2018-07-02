@@ -18,7 +18,7 @@ Currently the only dependencies are spdlog and the Windows SDK. Note that if you
 
 This will produce two binaries in `bin\debug`. To try it, start `TokenServer.exe` in an admin console; then in a separate unelevated console run `stdo.exe <program> <args>`. Currently you need to provide the full path to the program. It will ask for your password, but this is not yet implemented so the password is always `password`. To see the difference in elevation status, try `stdo.exe C:\Windows\System32\whoami.exe /groups` and look for the `Mandatory Label` section.
 
-**Note:** This will probably only build with Visual C++, and probably only 2017 or later due to use of C++17. You can use CQuery for autocompletion, but you will need to add `-DDECLSPEC_IMPORT=` to the options - it seems Clang doesn't support constexpr imported symbols, which are used frequently for RAII Windows `HANDLE` objects. See `class Handle` in `include/stdo/winsupport.h`.
+**Note:** This will probably only build with Visual C++, and probably only 2017 or later due to use of C++17. You can use CQuery for autocompletion, but you will need to add `-DDECLSPEC_IMPORT=` to the options - it seems Clang doesn't support constexpr imported symbols (in the current release; see https://reviews.llvm.org/D43320), which are used frequently for RAII Windows `HANDLE` objects. See `class Handle` in `include/stdo/winsupport.h`.
 
 ## Why is it called stdo?
 Unix systems use a user/group based access model. Windows uses access tokens. `sudo` stands for "set user do"; `stdo` stands for "set token do." Also because if Microsoft ever releases a sudo command, I don't want them to conflict.
