@@ -21,7 +21,7 @@ This will produce two binaries in `bin\debug`. To try it, start `TokenServer.exe
 **Note:** This will probably only build with Visual C++, and probably only 2017 or later due to use of C++17. You can use CQuery for autocompletion, but you will need to add `-DDECLSPEC_IMPORT=` to the options - it seems Clang doesn't support constexpr imported symbols (in the current release; see https://reviews.llvm.org/D43320), which are used frequently for RAII Windows `HANDLE` objects. See `class Handle` in `include/stdo/winsupport.h`.
 
 ## Why is it called stdo?
-Unix systems use a user/group based access model. Windows uses access tokens. `sudo` stands for "set user do"; `stdo` stands for "set token do." Also because if Microsoft ever releases a sudo command, I don't want them to conflict.
+Unix systems use a user/group based access model. Windows uses access tokens. `sudo` stands for "superuser do"; `stdo` stands for "set token do." Also because if Microsoft ever releases a sudo command, I don't want them to conflict.
 
 ## What makes this one different?
 It uses a token server, which can be run as a system service, to remotely reassign the primary token for an interactive process. A process you create with the `stdo.exe` command inherits the environment as if you just called the target command itself, but it starts elevated with no UAC involvement.
