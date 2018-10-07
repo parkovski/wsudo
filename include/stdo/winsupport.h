@@ -12,10 +12,17 @@ namespace stdo {
 std::string to_utf8(std::wstring_view utf16str);
 std::wstring to_utf16(std::string_view utf8str);
 
+/// Set thread name via new Win10 API, if it exists.
 bool setThreadName(const wchar_t *name);
 
+/// Convert a "GetLastError" code to string.
 std::string getSystemStatusString(DWORD status);
+/// Convenience GetLastError->string.
+inline std::string getLastErrorString() {
+  return getSystemStatusString(::GetLastError());
+}
 
+/// Dynamic module (DLL) load error.
 class module_load_error : public std::exception {
   DWORD _error;
   std::string _message;

@@ -7,15 +7,20 @@ namespace log {
   std::shared_ptr<spdlog::logger> g_errLogger;
 }
 
-const wchar_t *PipeFullPath = L"\\\\.\\pipe\\stdo_tokreq";
+const wchar_t *const PipeFullPath = L"\\\\.\\pipe\\stdo_tokreq";
 
-const char *MsgHeaderCredential = "CRED";
-const char *MsgHeaderBless = "BLES";
+namespace msg {
+  namespace client {
+    const char *const Credential = "CRED";
+    const char *const Bless = "BLES";
+  }
 
-const char *SMsgHeaderSuccess = "SUCC";
-const char *SMsgHeaderInvalidMessage = "MESG";
-const char *SMsgHeaderInternalError = "INTE";
-const char *SMsgHeaderAccessDenied = "DENY";
+  namespace server {
+    const char *const Success = "SUCC";
+    const char *const InvalidMessage = "MESG";
+    const char *const InternalError = "INTE";
+    const char *const AccessDenied = "DENY";
+  }
+} // namespace msg
 
 } // namespace stdo
-

@@ -3,6 +3,7 @@
 #include "stdo/ntapi.h"
 #include "stdo/server.h"
 
+#include <spdlog/sinks/stdout_color_sinks.h>
 #include <fmt/format.h>
 #include <Psapi.h>
 #include <cstring>
@@ -59,9 +60,14 @@ int wmain(int argc, wchar_t *argv[]) {
   gs_quitEventHandle = config.quitEvent;
 
   HANDLE hStdin = GetStdHandle(STD_INPUT_HANDLE);
-  DWORD stdinMode;
+  HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
+  DWORD stdinMode, stdoutMode;
   GetConsoleMode(hStdin, &stdinMode);
   SetConsoleMode(hStdin, stdinMode | ENABLE_PROCESSED_INPUT);
+  GetConsoleMode(hStdout, &stdoutMode);
+  SetConsoleMode(hStdout,
+                 ENABLE_PROCESSED_OUTPUT | ENABLE_WRAP_AT_EOL_OUTPUT |
+                 ENABLE_VIRTUAL_TERMINAL_PROCESSING);
   if (!SetConsoleCtrlHandler(nullptr, false) ||
       !SetConsoleCtrlHandler(consoleControlHandler, true))
   {
@@ -69,10 +75,13 @@ int wmain(int argc, wchar_t *argv[]) {
   } else {
     log::info("Starting server. Press Ctrl-C to exit.");
   }
+  STDO_SCOPEEXIT {
+    SetConsoleMode(hStdin, stdinMode);
+    SetConsoleMode(hStdout, stdoutMode);
+  };
 
   std::thread serverThread{&server::serverMain, std::ref(config)};
   serverThread.join();
   log::info("Event loop returned {}", server::statusToString(config.status));
-  SetConsoleMode(hStdin, stdinMode);
   return 0;
 }

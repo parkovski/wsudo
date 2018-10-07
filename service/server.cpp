@@ -19,7 +19,7 @@ EventStatus EventHandlerOverlapped::beginRead(HANDLE hFile) {
   } else if (GetLastError() == ERROR_IO_PENDING) {
     return EventStatus::InProgress;
   } else {
-    log::error("ReadFile failed: {}", getSystemStatusString(GetLastError()));
+    log::error("ReadFile failed: {}", getLastErrorString());
     return EventStatus::Failed;
   }
 }
@@ -34,7 +34,7 @@ EventStatus EventHandlerOverlapped::beginWrite(HANDLE hFile) {
   } else if (GetLastError() == ERROR_IO_PENDING) {
     return EventStatus::InProgress;
   } else {
-    log::error("WriteFile failed: {}", getSystemStatusString(GetLastError()));
+    log::error("WriteFile failed: {}", getLastErrorString());
     return EventStatus::Failed;
   }
 }
@@ -106,7 +106,7 @@ ClientConnectionHandler::connect(HANDLE pipe) {
     // null and set the event that will return failed and remove this object
     // from the event queue.
     log::error("Client {}: ConnectNamedPipe failed: {}", _clientId,
-               getSystemStatusString(GetLastError()));
+               getLastErrorString());
     SetEvent(_overlapped->hEvent);
     return nullptr;
   }
@@ -220,11 +220,11 @@ bool ClientConnectionHandler::dispatchMessage() {
   STDO_SCOPEEXIT_THIS {
     if (_buffer.size() < 4 || !std::memcmp(_buffer.data(), header, 4)) {
       log::debug("Response was not set!");
-      createResponse(SMsgHeaderInternalError, "Unknown error.");
+      createResponse(msg::server::InternalError, "Unknown error.");
     }
   };
 
-  if (!std::memcmp(header, MsgHeaderCredential, 4)) {
+  if (!std::memcmp(header, msg::client::Credential, 4)) {
     // Verify the username/password pair.
     auto bufferEnd = _buffer.cend();
     auto usernameBegin = _buffer.cbegin() + 4;
@@ -232,7 +232,7 @@ bool ClientConnectionHandler::dispatchMessage() {
     while (true) {
       if (usernameEnd == bufferEnd) {
         log::warn("Client {}: Password not found in message.", _clientId);
-        createResponse(SMsgHeaderInvalidMessage,
+        createResponse(msg::server::InvalidMessage,
                        "Password missing.");
         return false;
       }
@@ -250,7 +250,7 @@ bool ClientConnectionHandler::dispatchMessage() {
       }
       if (*passwordEnd == 0) {
         log::warn("Client {}: Password contains NUL.", _clientId);
-        createResponse(SMsgHeaderInvalidMessage,
+        createResponse(msg::server::InvalidMessage,
                        "Incorrect password format.");
         return false;
       }
@@ -258,24 +258,24 @@ bool ClientConnectionHandler::dispatchMessage() {
     }
     _buffer.emplace_back(0);
     return tryToLogonUser(&*usernameBegin, &*passwordBegin);
-  } else if (!std::memcmp(header, MsgHeaderBless, 4)) {
+  } else if (!std::memcmp(header, msg::client::Bless, 4)) {
     if (_buffer.size() != 4 + sizeof(HANDLE)) {
       log::warn("Client {}: Invalid bless message.", _clientId);
-      createResponse(SMsgHeaderInvalidMessage);
+      createResponse(msg::server::InvalidMessage);
     } else {
       HANDLE remoteHandle;
       std::memcpy(&remoteHandle, _buffer.data() + 4, sizeof(HANDLE));
       if (bless(remoteHandle)) {
-        createResponse(SMsgHeaderSuccess);
+        createResponse(msg::server::Success);
       } else {
-        createResponse(SMsgHeaderInternalError,
+        createResponse(msg::server::InternalError,
                        "Token substitution failed.");
       }
     }
     return false;
   } else {
     log::warn("Client {}: Unknown message header {}.", _clientId, header);
-    createResponse(SMsgHeaderInvalidMessage, "Unknown message header");
+    createResponse(msg::server::InvalidMessage, "Unknown message header");
     return false;
   }
 }
@@ -286,24 +286,24 @@ bool ClientConnectionHandler::tryToLogonUser(const char *username,
   // FIXME: Yeah...
   if (std::memcmp(password, "password", 9)) {
     log::trace("Client {}: Access denied - invalid password.", _clientId);
-    createResponse(SMsgHeaderAccessDenied);
+    createResponse(msg::server::AccessDenied);
     return false;
   }
 
-  createResponse(SMsgHeaderInternalError);
+  createResponse(msg::server::InternalError);
 
   HObject clientProcess;
   ULONG processId;
   if (!GetNamedPipeClientProcessId(_connection, &processId)) {
     log::error("Client {}: Couldn't get client process ID: {}", _clientId,
-               getSystemStatusString(GetLastError()));
+               getLastErrorString());
     return false;
   }
   auto const access =
     PROCESS_DUP_HANDLE | PROCESS_VM_READ | PROCESS_QUERY_INFORMATION;
   if (!(clientProcess = OpenProcess(access, false, processId))) {
     log::error("Client {}: Couldn't open client process: {}", _clientId,
-               getSystemStatusString(GetLastError()));
+               getLastErrorString());
     return false;
   }
 
@@ -313,7 +313,7 @@ bool ClientConnectionHandler::tryToLogonUser(const char *username,
                         &currentToken))
   {
     log::error("Client {}: Couldn't open client process token: {}", _clientId,
-               getSystemStatusString(GetLastError()));
+               getLastErrorString());
     return false;
   }
 
@@ -331,7 +331,7 @@ bool ClientConnectionHandler::tryToLogonUser(const char *username,
                                  &secDesc)))
   {
     log::error("Client {}: Couldn't get security info: {}", _clientId,
-               getSystemStatusString(GetLastError()));
+               getLastErrorString());
     return false;
   }
   STDO_SCOPEEXIT { LocalFree(secDesc); };
@@ -348,14 +348,14 @@ bool ClientConnectionHandler::tryToLogonUser(const char *username,
                         SecurityImpersonation, TokenPrimary, &newToken))
   {
     log::error("Client {}: Couldn't duplicate token: {}", _clientId,
-               getSystemStatusString(GetLastError()));
+               getLastErrorString());
     return false;
   }
 
   _userToken = std::move(newToken);
   log::trace("Client {}: Stored new token.", _clientId);
 
-  createResponse(SMsgHeaderSuccess);
+  createResponse(msg::server::Success);
   return true;
 }
 
@@ -370,13 +370,13 @@ bool ClientConnectionHandler::bless(HANDLE remoteHandle) {
 
   if (!GetNamedPipeClientProcessId(_connection, &processId)) {
     log::error("Client {}: Couldn't get client process ID: {}", _clientId,
-               getSystemStatusString(GetLastError()));
+               getLastErrorString());
     return false;
   }
   auto const access = PROCESS_DUP_HANDLE | PROCESS_VM_READ;
   if (!(clientProcess = OpenProcess(access, false, processId))) {
     log::error("Client {}: Couldn't open client process: {}", _clientId,
-               getSystemStatusString(GetLastError()));
+               getLastErrorString());
     return false;
   }
   log::trace("Trying to duplicate remote handle 0x{:X}",
@@ -385,7 +385,7 @@ bool ClientConnectionHandler::bless(HANDLE remoteHandle) {
                        &localHandle, PROCESS_SET_INFORMATION, false, 0))
   {
     log::error("Client {}: Couldn't duplicate remote handle: {}", _clientId,
-               getSystemStatusString(GetLastError()));
+               getLastErrorString());
     return false;
   }
 
@@ -400,12 +400,12 @@ bool ClientConnectionHandler::bless(HANDLE remoteHandle) {
                                           sizeof(nt::PROCESS_ACCESS_TOKEN))))
   {
     log::error("Client {}: Couldn't assign access token: {}", _clientId,
-               getSystemStatusString(GetLastError()));
+               getLastErrorString());
     return false;
   }
 
   log::trace("Client {}: Adjusted remote process token: {}", _clientId,
-             getSystemStatusString(GetLastError()));
+             getLastErrorString());
 
   return true;
 }
@@ -451,7 +451,7 @@ Status EventListener::eventLoop(DWORD timeout) {
       }
     } else if (result >= WAIT_ABANDONED_0 &&
                result < WAIT_ABANDONED_0 + _events.size())
-      
+
     {
       size_t index = (size_t)(result - WAIT_ABANDONED_0);
       log::error("Mutex abandoned state signaled for handler #{}.", index);

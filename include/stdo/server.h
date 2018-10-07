@@ -12,9 +12,14 @@
 
 namespace stdo::server {
 
-constexpr int MaxPipeConnections = 5;
+// Maximum concurrent server connections. Being sudo, it's unlikely to have to
+// process many things concurrently, but we have to give Windows a number.
+constexpr int MaxPipeConnections = 10;
+
+// Pipe timeout, again for Windows.
 constexpr int PipeDefaultTimeout = 0;
 
+// Server status codes
 enum Status : int {
   StatusUnset = -1,
   StatusOk = 0,
@@ -25,11 +30,12 @@ enum Status : int {
 
 inline const char *statusToString(Status status) {
   switch (status) {
+  default: return "unknown status";
   case StatusUnset: return "status not set";
   case StatusOk: return "ok";
   case StatusCreatePipeFailed: return "pipe creation failed";
   case StatusTimedOut: return "timed out";
-  default: return "unknown error";
+  case StatusEventFailed: return "event failed";
   }
 }
 
@@ -191,14 +197,6 @@ public:
     return EventStatus::InProgress;
   }
 };
-
-extern template
-ClientConnectionHandler::Callback
-ClientConnectionHandler::finishRespond<true>();
-
-extern template
-ClientConnectionHandler::Callback
-ClientConnectionHandler::finishRespond<false>();
 
 class EventListener {
   std::vector<HANDLE> _events;

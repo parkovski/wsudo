@@ -1,5 +1,6 @@
 #include "stdo/client.h"
 
+#include <spdlog/sinks/stdout_color_sinks.h>
 #include <fmt/format.h>
 #include <string>
 #include <iostream>
@@ -50,8 +51,8 @@ bool ClientConnection::negotiate(const char *credentials, size_t length) {
   DWORD bytes;
   size_t messageLength = length + 4;
   _buffer.resize(messageLength);
-  assert(strlen(MsgHeaderCredential) == 4);
-  std::memcpy(_buffer.data(), MsgHeaderCredential, 4);
+  assert(strlen(msg::client::Credential) == 4);
+  std::memcpy(_buffer.data(), msg::client::Credential, 4);
   std::memcpy(_buffer.data() + 4, credentials, length);
   log::trace("Writing credential message, size {}", messageLength);
   if (
@@ -76,8 +77,8 @@ bool ClientConnection::bless(HANDLE process) {
   DWORD bytes;
   size_t messageLength = 4 + sizeof(HANDLE);
   _buffer.resize(messageLength);
-  assert(strlen(MsgHeaderBless) == 4);
-  std::memcpy(_buffer.data(), MsgHeaderBless, 4);
+  assert(strlen(msg::client::Bless) == 4);
+  std::memcpy(_buffer.data(), msg::client::Bless, 4);
   std::memcpy(_buffer.data() + 4, &process, sizeof(HANDLE));
   log::trace("Writing bless message, size {}", messageLength);
   if (
@@ -107,15 +108,15 @@ bool ClientConnection::readServerMessage() {
   std::memcpy(header, _buffer.data(), 4);
   header[4] = 0;
   log::trace("Reading response with code {}.", header);
-  if (!std::memcmp(header, SMsgHeaderSuccess, 4)) {
+  if (!std::memcmp(header, msg::server::Success, 4)) {
     // Don't print a success message - just start the process.
     return true;
   }
-  if (!std::memcmp(header, SMsgHeaderInvalidMessage, 4)) {
+  if (!std::memcmp(header, msg::server::InvalidMessage, 4)) {
     std::wcerr << L"Invalid message.";
-  } else if (!std::memcmp(header, SMsgHeaderInternalError, 4)) {
+  } else if (!std::memcmp(header, msg::server::InternalError, 4)) {
     std::wcerr << L"Internal server error.";
-  } else if (!std::memcmp(header, SMsgHeaderAccessDenied, 4)) {
+  } else if (!std::memcmp(header, msg::server::AccessDenied, 4)) {
     std::wcerr << L"Access denied; this incident will be reported.";
     // TODO: Send email to police.
   }
@@ -191,7 +192,7 @@ int wmain(int argc, wchar_t *argv[]) {
                        ENABLE_QUICK_EDIT_MODE;
   SetConsoleMode(hStdin, newStdinMode);
   STDO_SCOPEEXIT { SetConsoleMode(hStdin, stdinMode); };
-  
+
   std::wstring username{};
   ULONG usernameLength = 0;
   GetUserNameExW(NameSamCompatible, nullptr, &usernameLength);
