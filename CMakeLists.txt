@@ -10,6 +10,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+option(STDO_BUILD_TESTS "Build tests" ON)
+
 if(MSVC)
   add_compile_options(-diagnostics:caret)
 endif()
@@ -20,22 +22,26 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin/$<CONFIG>)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
 
 find_package(spdlog CONFIG REQUIRED)
-find_package(fmt)
-find_package(catch2)
+find_package(fmt CONFIG REQUIRED)
 
 set(COMMON_SRC
-  common/common.cpp
-  common/winsupport.cpp
+  common.cpp
+  winsupport.cpp
 )
+list(TRANSFORM COMMON_SRC PREPEND "common/")
 
 set(CLIENT_SRC
-  client/main.cpp
+  main.cpp
 )
+list(TRANSFORM CLIENT_SRC PREPEND "client/")
 
 set(SERVICE_SRC
-  service/main.cpp
-  service/server.cpp
+  clientconnection.cpp
+  main.cpp
+  overlapped.cpp
+  server.cpp
 )
+list(TRANSFORM SERVICE_SRC PREPEND "service/")
 
 add_library(stdo_common STATIC ${COMMON_SRC})
 add_executable(stdo ${CLIENT_SRC})
@@ -43,11 +49,12 @@ add_executable(TokenServer ${SERVICE_SRC})
 
 include_directories(${PROJECT_SOURCE_DIR}/include)
 
-set(STDO_LIBRARIES spdlog::spdlog)
-if(fmt_FOUND)
-  list(APPEND STDO_LIBRARIES fmt::fmt-header-only)
-endif()
+set(STDO_LIBRARIES spdlog::spdlog fmt::fmt-header-only)
 
 target_link_libraries(stdo_common ${STDO_LIBRARIES})
 target_link_libraries(stdo stdo_common)
 target_link_libraries(TokenServer stdo_common)
+
+if(STDO_BUILD_TESTS)
+  add_subdirectory(test)
+endif()

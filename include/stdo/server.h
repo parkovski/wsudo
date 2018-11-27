@@ -86,27 +86,26 @@ enum class EventStatus {
   Failed,
 };
 
+class EventListener;
+
 class EventHandler {
 public:
   virtual ~EventHandler() { }
 
   virtual HANDLE event() const = 0;
-  virtual EventStatus operator()() = 0;
+  virtual EventStatus operator()(EventListener &) = 0;
 };
 
-class QuitHandler : public EventHandler {
-  HANDLE _quitEvent;
+class SimpleEventHandler : public EventHandler {
+  HObject _event;
 
 public:
-  QuitHandler(HANDLE quitEvent) noexcept
-    : _quitEvent(quitEvent)
+  explicit SimpleEventHandler() noexcept
+    : _event{CreateEventW(nullptr, true, false, nullptr)}
   {}
 
-  QuitHandler(QuitHandler &&) = default;
-
-  HANDLE event() const override { return _quitEvent; }
-
-  EventStatus operator()() override {
+  virtual HANDLE event() const override { return _event; }
+  virtual EventStatus operator()(EventListener &) {
     return EventStatus::Finished;
   }
 };
@@ -143,6 +142,10 @@ public:
   EventHandlerOverlapped &operator=(EventHandlerOverlapped &&other) = default;
 
   HANDLE event() const override { return _overlapped->hEvent; }
+};
+
+class WaitForClientHandler : public EventHandlerOverlapped {
+
 };
 
 using HPipeConnection = Handle<HANDLE, DisconnectNamedPipe>;
@@ -190,7 +193,7 @@ class ClientConnectionHandler : public EventHandlerOverlapped {
 public:
   explicit ClientConnectionHandler(HANDLE pipe, int clientId) noexcept;
 
-  EventStatus operator()() override {
+  EventStatus operator()(EventListener &) override {
     if (!_callback || !(_callback = _callback(this))) {
       return EventStatus::Failed;
     }
@@ -206,17 +209,15 @@ class EventListener {
   std::unique_ptr<EventHandler> remove(size_t index);
 
 public:
-  template<
-    typename H,
-    typename = std::enable_if_t<std::is_convertible_v<H &, EventHandler &>>
-  >
-  explicit EventListener(H exitLoopHandler)
+  explicit EventListener()
     : _events{},
       _handlers{}
   {
     _events.reserve(MaxPipeConnections + 1);
     _handlers.reserve(MaxPipeConnections + 1);
-    push(std::move(exitLoopHandler));
+
+    // Add the quit event
+    push(SimpleEventHandler{});
   }
 
   template<typename H>
@@ -226,22 +227,24 @@ public:
     _handlers.emplace_back(std::make_unique<H>(std::move(handler)));
   }
 
+  HANDLE quitEvent() const { return _events[ExitLoopIndex]; }
+
   Status eventLoop(DWORD timeout = INFINITE);
 };
 
 struct Config {
+  // Named pipe filename.
   std::wstring pipeName;
+
+  // Pointer to global quit event handle.
+  HANDLE *quitEvent;
+
+  // Server status return value.
   Status status = StatusUnset;
-  HObject quitEvent;
 
-  Config(std::wstring pipeName, HObject quitEvent)
-    : pipeName(std::move(pipeName)),
-      quitEvent(std::move(quitEvent))
+  explicit Config(std::wstring pipeName, HANDLE *quitEvent)
+    : pipeName(std::move(pipeName)), quitEvent(quitEvent)
   {}
-
-  void quit() {
-    SetEvent(quitEvent);
-  }
 };
 
 void serverMain(Config &config);

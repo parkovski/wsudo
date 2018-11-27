@@ -51,13 +51,14 @@ int wmain(int argc, wchar_t *argv[]) {
   log::g_outLogger->set_level(spdlog::level::trace);
   log::g_errLogger = spdlog::stderr_color_mt("stdo.err");
   log::g_errLogger->set_level(spdlog::level::warn);
+#ifndef NDEBUG
+  spdlog::set_pattern("\033[90m[%T.%e]\033[m %^%l: %v%$");
+#else
+  spdlog::set_pattern("[%Y-%m-%d %T.%e] %^[%l]%$ %v");
+#endif
   STDO_SCOPEEXIT { spdlog::drop_all(); };
 
-  server::Config config{
-    PipeFullPath,
-    HObject{CreateEventW(nullptr, true, false, nullptr)}
-  };
-  gs_quitEventHandle = config.quitEvent;
+  server::Config config{ PipeFullPath, &gs_quitEventHandle };
 
   HANDLE hStdin = GetStdHandle(STD_INPUT_HANDLE);
   HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
