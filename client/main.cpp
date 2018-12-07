@@ -1,4 +1,4 @@
-#include "stdo/client.h"
+#include "wsudo/client.h"
 
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <fmt/format.h>
@@ -13,7 +13,7 @@
 #include <Security.h>
 #pragma comment(lib, "Secur32.lib")
 
-using namespace stdo;
+using namespace wsudo;
 
 void ClientConnection::connect(
   LPSECURITY_ATTRIBUTES secAttr,
@@ -167,14 +167,14 @@ std::pair<HANDLE, HANDLE> createProcess(int argc, wchar_t *argv[]) {
 }
 
 int wmain(int argc, wchar_t *argv[]) {
-  log::g_outLogger = spdlog::stdout_color_mt("stdo.out");
+  log::g_outLogger = spdlog::stdout_color_mt("wsudo.out");
   log::g_outLogger->set_level(spdlog::level::trace);
-  log::g_errLogger = spdlog::stderr_color_mt("stdo.err");
+  log::g_errLogger = spdlog::stderr_color_mt("wsudo.err");
   log::g_errLogger->set_level(spdlog::level::warn);
-  STDO_SCOPEEXIT { spdlog::drop_all(); };
+  WSUDO_SCOPEEXIT { spdlog::drop_all(); };
 
   if (argc < 2) {
-    std::wcerr << L"Usage: stdo <program> <args>\n";
+    std::wcerr << L"Usage: wsudo <program> <args>\n";
     return ClientExitInvalidUsage;
   }
 
@@ -191,7 +191,7 @@ int wmain(int argc, wchar_t *argv[]) {
                        ENABLE_ECHO_INPUT | ENABLE_EXTENDED_FLAGS |
                        ENABLE_QUICK_EDIT_MODE;
   SetConsoleMode(hStdin, newStdinMode);
-  STDO_SCOPEEXIT { SetConsoleMode(hStdin, stdinMode); };
+  WSUDO_SCOPEEXIT { SetConsoleMode(hStdin, stdinMode); };
 
   std::wstring username{};
   ULONG usernameLength = 0;
@@ -210,7 +210,7 @@ int wmain(int argc, wchar_t *argv[]) {
   }
 
   std::wstring password{};
-  std::wcout << L"[stdo] password for " << username << ": ";
+  std::wcout << L"[wsudo] password for " << username << ": ";
   std::wcout.flush();
   {
     SetConsoleMode(hStdin, ENABLE_EXTENDED_FLAGS | ENABLE_QUICK_EDIT_MODE);

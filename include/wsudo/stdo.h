@@ -1,5 +1,5 @@
-#ifndef STDO_STDO_H
-#define STDO_STDO_H
+#ifndef WSUDO_WSUDO_H
+#define WSUDO_WSUDO_H
 
 // #pragma warning(push)
 // #pragma warning(disable:4996) // codecvt deprecated
@@ -12,7 +12,7 @@
 
 #include <cstdint>
 
-namespace stdo {
+namespace wsudo {
 
 /// File path to the client-server communication pipe.
 extern const wchar_t *const PipeFullPath;
@@ -49,28 +49,28 @@ extern std::shared_ptr<spdlog::logger> g_outLogger;
 extern std::shared_ptr<spdlog::logger> g_errLogger;
 
 template<typename... Args>
-static inline void trace(const char *fmt, const Args &...args)
-{ g_outLogger->trace(fmt, args...); }
+static inline void trace(const char *fmt, Args &&...args)
+{ g_outLogger->trace(fmt, std::forward<Args>(args)...); }
 
 template<typename... Args>
-static inline void debug(const char *fmt, const Args &...args)
-{ g_outLogger->debug(fmt, args...); }
+static inline void debug(const char *fmt, Args &&...args)
+{ g_outLogger->debug(fmt, std::forward<Args>(args)...); }
 
 template<typename... Args>
-static inline void info(const char *fmt, const Args &...args)
-{ g_outLogger->info(fmt, args...); }
+static inline void info(const char *fmt, Args &&...args)
+{ g_outLogger->info(fmt, std::forward<Args>(args)...); }
 
 template<typename... Args>
-static inline void warn(const char *fmt, const Args &...args)
-{ g_errLogger->warn(fmt, args...); }
+static inline void warn(const char *fmt, Args &&...args)
+{ g_errLogger->warn(fmt, std::forward<Args>(args)...); }
 
 template<typename... Args>
-static inline void error(const char *fmt, const Args &...args)
-{ g_errLogger->error(fmt, args...); }
+static inline void error(const char *fmt, Args &&...args)
+{ g_errLogger->error(fmt, std::forward<Args>(args)...); }
 
 template<typename... Args>
-static inline void critical(const char *fmt, const Args &...args)
-{ g_errLogger->critical(fmt, args...); }
+static inline void critical(const char *fmt, Args &&...args)
+{ g_errLogger->critical(fmt, std::forward<Args>(args)...); }
 
 } // namespace log
 
@@ -95,21 +95,23 @@ namespace detail {
   }
 }
 
-} // namespace stdo
+} // namespace wsudo
 
-#define STDO_CONCAT_IMPL(a,b) a##b
-#define STDO_CONCAT2(a,b) STDO_CONCAT_IMPL(a,b)
-#define STDO_CONCAT3(a,b,c) STDO_CONCAT2(STDO_CONCAT2(a,b),c)
-#define STDO_CONCAT4(a,b,c,d) STDO_CONCAT2(STDO_CONCAT2(a,b),STDO_CONCAT2(c,d))
+#define WSUDO_CONCAT_IMPL(a,b) a##b
+#define WSUDO_CONCAT2(a,b) WSUDO_CONCAT_IMPL(a,b)
+#define WSUDO_CONCAT3(a,b,c) WSUDO_CONCAT2(WSUDO_CONCAT2(a,b),c)
+#define WSUDO_CONCAT4(a,b,c,d) WSUDO_CONCAT2(WSUDO_CONCAT2(a,b),WSUDO_CONCAT2(c,d))
 
-/// Usage: STDO_SCOPEEXIT { capture-by-ref lambda body };
-#define STDO_SCOPEEXIT \
-  auto const &STDO_CONCAT4(_scopeExit_, __func__, _, __LINE__) = \
-    ::stdo::detail::ScopeExitHelper{} && [&]()
+// Scope destructor.
+// Usage: WSUDO_SCOPEEXIT { capture-by-ref lambda body };
+#define WSUDO_SCOPEEXIT \
+  [[maybe_unused]] auto const &WSUDO_CONCAT4(_scopeExit_, __func__, _, __LINE__) = \
+    ::wsudo::detail::ScopeExitHelper{} && [&]()
 
-#define STDO_SCOPEEXIT_THIS \
-  auto const &STDO_CONCAT4(_scopeExit_, __func__, _, __LINE__) = \
-    ::stdo::detail::ScopeExitHelper{} && [&, this]()
+// Scope destructor that captures the this pointer by value.
+#define WSUDO_SCOPEEXIT_THIS \
+  [[maybe_unused]] auto const &WSUDO_CONCAT4(_scopeExit_, __func__, _, __LINE__) = \
+    ::wsudo::detail::ScopeExitHelper{} && [&, this]()
 
-#endif // STDO_STDO_H
+#endif // WSUDO_WSUDO_H
 

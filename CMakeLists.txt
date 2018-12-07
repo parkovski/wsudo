@@ -1,16 +1,16 @@
 cmake_minimum_required(VERSION 3.10 FATAL_ERROR)
 
-project(stdo)
-set(stdo_VERSION_MAJOR 0)
-set(stdo_VERSION_MINOR 1)
-set(stdo_VERSION_PATCH 0)
+project(wsudo)
+set(wsudo_VERSION_MAJOR 0)
+set(wsudo_VERSION_MINOR 1)
+set(wsudo_VERSION_PATCH 0)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-option(STDO_BUILD_TESTS "Build tests" ON)
+option(WSUDO_BUILD_TESTS "Build tests" ON)
 
 if(MSVC)
   add_compile_options(-diagnostics:caret)
@@ -43,18 +43,18 @@ set(SERVICE_SRC
 )
 list(TRANSFORM SERVICE_SRC PREPEND "service/")
 
-add_library(stdo_common STATIC ${COMMON_SRC})
-add_executable(stdo ${CLIENT_SRC})
+add_library(wsudo_common STATIC ${COMMON_SRC})
+add_executable(wsudo ${CLIENT_SRC})
 add_executable(TokenServer ${SERVICE_SRC})
 
 include_directories(${PROJECT_SOURCE_DIR}/include)
 
-set(STDO_LIBRARIES spdlog::spdlog fmt::fmt-header-only)
+set(WSUDO_LIBRARIES spdlog::spdlog fmt::fmt-header-only)
 
-target_link_libraries(stdo_common ${STDO_LIBRARIES})
-target_link_libraries(stdo stdo_common)
-target_link_libraries(TokenServer stdo_common)
+target_link_libraries(wsudo_common ${WSUDO_LIBRARIES})
+target_link_libraries(wsudo wsudo_common)
+target_link_libraries(TokenServer wsudo_common)
 
-if(STDO_BUILD_TESTS)
+if(WSUDO_BUILD_TESTS)
   add_subdirectory(test)
 endif()

@@ -1,8 +1,8 @@
-#ifndef STDO_SERVER_H
-#define STDO_SERVER_H
+#ifndef WSUDO_SERVER_H
+#define WSUDO_SERVER_H
 
-#include "stdo/stdo.h"
-#include "stdo/winsupport.h"
+#include "wsudo/wsudo.h"
+#include "wsudo/winsupport.h"
 
 #include <memory>
 #include <type_traits>
@@ -10,7 +10,7 @@
 #include <vector>
 #include <string_view>
 
-namespace stdo::server {
+namespace wsudo::server {
 
 // Maximum concurrent server connections. Being sudo, it's unlikely to have to
 // process many things concurrently, but we have to give Windows a number.
@@ -39,93 +39,29 @@ inline const char *statusToString(Status status) {
   }
 }
 
-class EventListener;
-class EventHandler;
-
-class event_mutex_abandoned_error : public std::exception {
-  std::unique_ptr<EventHandler> _handler;
-public:
-  explicit event_mutex_abandoned_error(std::unique_ptr<EventHandler> handler)
-    noexcept
-    : _handler(std::move(handler))
-  {}
-
-  const char *what() const noexcept override {
-    return "Mutex abandoned";
-  }
-
-  const EventHandler *handler() const noexcept {
-    return _handler.get();
-  }
-
-  // Allow you to take the handler and do something with it.
-  std::unique_ptr<EventHandler> &handler() noexcept {
-    return _handler;
-  }
-};
-
-class event_wait_failed_error : public std::exception {
-  DWORD _lastError;
-public:
-  explicit event_wait_failed_error(DWORD lastError) noexcept
-    : _lastError(lastError)
-  {}
-
-  const char *what() const noexcept override {
-    return "Mutex abandoned";
-  }
-
-  DWORD getLastError() const noexcept {
-    return _lastError;
-  }
-};
-
-enum class EventStatus {
-  Finished,
-  InProgress,
-  Failed,
-};
-
-class EventListener;
-
-class EventHandler {
-public:
-  virtual ~EventHandler() { }
-
-  virtual HANDLE event() const = 0;
-  virtual EventStatus operator()(EventListener &) = 0;
-};
-
-class SimpleEventHandler : public EventHandler {
-  HObject _event;
-
-public:
-  explicit SimpleEventHandler() noexcept
-    : _event{CreateEventW(nullptr, true, false, nullptr)}
-  {}
-
-  virtual HANDLE event() const override { return _event; }
-  virtual EventStatus operator()(EventListener &) {
-    return EventStatus::Finished;
-  }
-};
-
+#if 0
 class EventHandlerOverlapped : public EventHandler {
 protected:
   std::unique_ptr<OVERLAPPED> _overlapped;
   std::vector<char> _buffer;
+  size_t _messageOffset;
 
-  void resetBuffer() { _buffer.clear(); }
+  // Buffer size will stop doubling here and grow linearly. This is the amount
+  // of times the buffer will double, so the actual size will be this number
+  // times PipeBufferSize.
+  const size_t _bufferDoublingLimit = 4;
+
   EventStatus beginRead(HANDLE hFile);
+  EventStatus continueRead(HANDLE hFile);
   EventStatus beginWrite(HANDLE hFile);
-  EventStatus endReadWrite(HANDLE hFile);
+  EventStatus continueWrite(HANDLE hFile);
 
-  // Interprets GetOverlappedResult and resets the event on success.
-  DWORD getOverlappedResult(HANDLE hFile, DWORD *bytes = nullptr);
+  // Returns MoreData when EOF is not reached.
+  EventStatus endReadWrite(HANDLE hFile);
 
 public:
   explicit EventHandlerOverlapped() noexcept
-    : _overlapped(std::make_unique<OVERLAPPED>())
+    : _overlapped{std::make_unique<OVERLAPPED>()}, _messageOffset{0}
   {
     _overlapped->hEvent = CreateEventW(nullptr, true, false, nullptr);
     _buffer.reserve(PipeBufferSize);
@@ -142,10 +78,7 @@ public:
   EventHandlerOverlapped &operator=(EventHandlerOverlapped &&other) = default;
 
   HANDLE event() const override { return _overlapped->hEvent; }
-};
-
-class WaitForClientHandler : public EventHandlerOverlapped {
-
+  void resetEvent() { ResetEvent(_overlapped->hEvent); }
 };
 
 using HPipeConnection = Handle<HANDLE, DisconnectNamedPipe>;
@@ -193,6 +126,9 @@ class ClientConnectionHandler : public EventHandlerOverlapped {
 public:
   explicit ClientConnectionHandler(HANDLE pipe, int clientId) noexcept;
 
+  void reset2();
+  bool isWaitingForConnection();
+
   EventStatus operator()(EventListener &) override {
     if (!_callback || !(_callback = _callback(this))) {
       return EventStatus::Failed;
@@ -200,37 +136,7 @@ public:
     return EventStatus::InProgress;
   }
 };
-
-class EventListener {
-  std::vector<HANDLE> _events;
-  std::vector<std::unique_ptr<EventHandler>> _handlers;
-  constexpr static size_t ExitLoopIndex = 0;
-
-  std::unique_ptr<EventHandler> remove(size_t index);
-
-public:
-  explicit EventListener()
-    : _events{},
-      _handlers{}
-  {
-    _events.reserve(MaxPipeConnections + 1);
-    _handlers.reserve(MaxPipeConnections + 1);
-
-    // Add the quit event
-    push(SimpleEventHandler{});
-  }
-
-  template<typename H>
-  std::enable_if_t<std::is_convertible_v<H &, EventHandler &>>
-  push(H handler) {
-    _events.emplace_back(handler.event());
-    _handlers.emplace_back(std::make_unique<H>(std::move(handler)));
-  }
-
-  HANDLE quitEvent() const { return _events[ExitLoopIndex]; }
-
-  Status eventLoop(DWORD timeout = INFINITE);
-};
+#endif
 
 struct Config {
   // Named pipe filename.
@@ -249,7 +155,7 @@ struct Config {
 
 void serverMain(Config &config);
 
-} // namespace stdo::server
+} // namespace wsudo::server
 
-#endif // STDO_SERVER_H
+#endif // WSUDO_SERVER_H
 

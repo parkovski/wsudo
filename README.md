@@ -1,30 +1,27 @@
-# `stdo`: Proof of concept sudo for Windows
+# `wsudo`: Proof of concept sudo for Windows
 
 ## ⚠ Not production ready!
 This is a very rough proof of concept, intended to show that it can be done. It is buggy, insecure, and missing many features you might want from a sudo equivalent. Use at your own risk!
 
 ## What does it look like?
-A terminal. Or two terminals currently. [See this short demo](https://raw.githubusercontent.com/parkovski/stdo/assets/demo.mp4).
+A terminal. Or two terminals currently. [See this short demo](https://raw.githubusercontent.com/parkovski/wsudo/assets/demo.mp4).
 
 ## How to build/run?
 Currently the only dependencies are spdlog and the Windows SDK. Note that if you are using vcpkg, spdlog requires an external fmt install but is not yet compatible with fmt v5, so you'll have to downgrade the port file. For convenience, the last working version of fmt was added at commit `178517052f42d428bb2f304946e635d3c1f318e9`. The project builds with CMake - I use the Ninja generator but the VS one is probably fine. After making sure your spdlog and fmt work, do:
 
 ```powershell
-...\stdo> mkdir build
-...\stdo> cd build
-...\stdo> cmake -G Ninja ..
-...\stdo> cmake --build .
+...\wsudo> mkdir build
+...\wsudo> cd build
+...\wsudo> cmake -G Ninja ..
+...\wsudo> cmake --build .
 ```
 
-This will produce two binaries in `bin\debug`. To try it, start `TokenServer.exe` in an admin console; then in a separate unelevated console run `stdo.exe <program> <args>`. Currently you need to provide the full path to the program. It will ask for your password, but this is not yet implemented so the password is always `password`. To see the difference in elevation status, try `stdo.exe C:\Windows\System32\whoami.exe /groups` and look for the `Mandatory Label` section.
+This will produce two binaries in `bin\debug`. To try it, start `TokenServer.exe` in an admin console; then in a separate unelevated console run `wsudo.exe <program> <args>`. Currently you need to provide the full path to the program. It will ask for your password, but this is not yet implemented so the password is always `password`. To see the difference in elevation status, try `wsudo.exe C:\Windows\System32\whoami.exe /groups` and look for the `Mandatory Label` section.
 
-**Note:** This will probably only build with Visual C++, and probably only 2017 or later due to use of C++17. You can use CQuery for autocompletion, but you will need to add `-DDECLSPEC_IMPORT=` to the options - it seems Clang doesn't support constexpr imported symbols (in the current release; see https://reviews.llvm.org/D43320), which are used frequently for RAII Windows `HANDLE` objects. See `class Handle` in `include/stdo/winsupport.h`.
-
-## Why is it called stdo?
-Unix systems use a user/group based access model. Windows uses access tokens. `sudo` stands for "superuser do"; `stdo` stands for "set token do." Also because if Microsoft ever releases a sudo command, I don't want them to conflict.
+**Note:** This will probably only build with Visual C++, and probably only 2017 or later due to use of C++17. You can use CQuery for autocompletion, but you will need to add `-DDECLSPEC_IMPORT=` to the options - it seems Clang doesn't support constexpr imported symbols (in the current release; see https://reviews.llvm.org/D43320), which are used frequently for RAII Windows `HANDLE` objects. See `class Handle` in `include/wsudo/winsupport.h`.
 
 ## What makes this one different?
-It uses a token server, which can be run as a system service, to remotely reassign the primary token for an interactive process. A process you create with the `stdo.exe` command inherits the environment as if you just called the target command itself, but it starts elevated with no UAC involvement.
+It uses a token server, which can be run as a system service, to remotely reassign the primary token for an interactive process. A process you create with the `wsudo.exe` command inherits the environment as if you just called the target command itself, but it starts elevated with no UAC involvement.
 
 ## How?
 There are three ways to create an elevated process:
@@ -42,7 +39,7 @@ Most of them. Here are the big ones:
 - Create a token for the client user instead of just duplicating the server's token.
 - Cache the users' tokens for a while after a successful authentication (note: should be per-session).
 - Implement Windows service functionality for the server.
-- Create some type of "stdoers" config file or registry key and enforce permissions.
+- Create some type of "sudoers" config file or registry key and enforce permissions.
 - Improve the client's command line handling - shouldn't have to type the full path to an exe.
 - Improve error handling and write tests.
 - Make the server handle multiple clients at a time. It already works as an async event loop so this should be fairly easy.

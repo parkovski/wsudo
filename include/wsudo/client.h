@@ -1,12 +1,12 @@
-#ifndef STDO_CLIENT_H
-#define STDO_CLIENT_H
+#ifndef WSUDO_CLIENT_H
+#define WSUDO_CLIENT_H
 
-#include "stdo/stdo.h"
-#include "stdo/winsupport.h"
+#include "wsudo/wsudo.h"
+#include "wsudo/winsupport.h"
 
 #include <vector>
 
-namespace stdo {
+namespace wsudo {
 
 constexpr int ClientExitAccessDenied = 225;
 constexpr int ClientExitUserCanceled = 226;
@@ -39,7 +39,7 @@ public:
   bool readServerMessage();
 };
 
-}
+} // namespace wsudo
 
-#endif // STDO_CLIENT_H
+#endif // WSUDO_CLIENT_H
 

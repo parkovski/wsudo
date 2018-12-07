@@ -1,5 +1,5 @@
-#ifndef STDO_WINSUPPORT_H
-#define STDO_WINSUPPORT_H
+#ifndef WSUDO_WINSUPPORT_H
+#define WSUDO_WINSUPPORT_H
 
 #include <Windows.h>
 #include <exception>
@@ -7,22 +7,23 @@
 #include <string_view>
 #include <optional>
 
-namespace stdo {
+namespace wsudo {
 
 std::string to_utf8(std::wstring_view utf16str);
 std::wstring to_utf16(std::string_view utf8str);
 
-/// Set thread name via new Win10 API, if it exists.
+// Set thread name via new Win10 API, if it exists.
 bool setThreadName(const wchar_t *name);
 
-/// Convert a "GetLastError" code to string.
+// Convert a "GetLastError" code to string.
 std::string getSystemStatusString(DWORD status);
-/// Convenience GetLastError->string.
+
+// Convenience GetLastError->string.
 inline std::string getLastErrorString() {
   return getSystemStatusString(::GetLastError());
 }
 
-/// Dynamic module (DLL) load error.
+// Dynamic module (DLL) load error.
 class module_load_error : public std::exception {
   DWORD _error;
   std::string _message;
@@ -164,6 +165,6 @@ public:
 
 using HObject = Handle<HANDLE, CloseHandle>;
 
-} // namespace stdo
+} // namespace wsudo
 
-#endif // STDO_WINSUPPORT_H
+#endif // WSUDO_WINSUPPORT_H

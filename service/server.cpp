@@ -1,70 +1,13 @@
-#include "stdo/server.h"
-#include "stdo/ntapi.h"
+#include "wsudo/server.h"
+#include "wsudo/events.h"
+#include "wsudo/ntapi.h"
 
 #include <aclapi.h>
 
 #pragma comment(lib, "Advapi32.lib")
 
-using namespace stdo;
-using namespace stdo::server;
-
-std::unique_ptr<EventHandler> EventListener::remove(size_t index) {
-  auto elem = std::move(_handlers[index]);
-  _events.erase(_events.cbegin() + index);
-  _handlers.erase(_handlers.cbegin() + index);
-  return elem;
-}
-
-Status EventListener::eventLoop(DWORD timeout) {
-  while (true) {
-    log::trace("Waiting on {} events", _events.size());
-    auto result = WaitForMultipleObjects(
-      (DWORD)_events.size(), &_events[0], false, timeout
-    );
-
-    if (result == WAIT_TIMEOUT) {
-      log::warn("WaitForMultipleObjects timed out.");
-      return StatusTimedOut;
-    } else if (result >= WAIT_OBJECT_0 &&
-               result < WAIT_OBJECT_0 + _events.size())
-    {
-      size_t index = (size_t)(result - WAIT_OBJECT_0);
-      log::trace("Event #{} signaled.", index);
-      if (index == ExitLoopIndex) {
-        return StatusOk;
-      }
-      switch ((*_handlers[index])(*this)) {
-      case EventStatus::InProgress:
-        log::trace("Event #{} returned InProgress.", index);
-        ResetEvent(_events[index]);
-        break;
-      case EventStatus::Finished:
-        log::trace("Event #{} returned Finished.", index);
-        remove(index);
-        break;
-      case EventStatus::Failed:
-        log::error("Event #{} returned Failed.", index);
-        remove(index);
-        break;
-      }
-    } else if (result >= WAIT_ABANDONED_0 &&
-               result < WAIT_ABANDONED_0 + _events.size())
-
-    {
-      size_t index = (size_t)(result - WAIT_ABANDONED_0);
-      log::error("Mutex abandoned state signaled for handler #{}.", index);
-      throw event_mutex_abandoned_error{remove(index)};
-    } else if (result == WAIT_FAILED) {
-      auto error = GetLastError();
-      log::error("WaitForMultipleObjects failed: {}",
-                 getSystemStatusString(error));
-      throw event_wait_failed_error{error};
-    } else {
-      log::critical("WaitForMultipleObjects returned 0x{:X}.", result);
-      std::terminate();
-    }
-  }
-}
+using namespace wsudo;
+using namespace wsudo::server;
 
 template<typename F>
 static
@@ -114,8 +57,9 @@ doWithSecurityAttributes(F fn) {
   return fn(&secAttr);
 }
 
-#define FINISH(exitCode) do { config.status = exitCode; return; } while (false)
-void stdo::server::serverMain(Config &config) {
+void wsudo::server::serverMain(Config &config) {
+  using namespace events;
+
   HObject pipe{};
   if (!doWithSecurityAttributes([&](LPSECURITY_ATTRIBUTES sa) -> bool {
     pipe = CreateNamedPipeW(config.pipeName.c_str(),
@@ -129,12 +73,28 @@ void stdo::server::serverMain(Config &config) {
     return !!pipe;
   }))
   {
-    FINISH(StatusCreatePipeFailed);
+    config.status = StatusCreatePipeFailed;
+    return;
   }
 
   EventListener listener;
-  listener.push(ClientConnectionHandler{pipe, 1});
-  *config.quitEvent = listener.quitEvent();
-  FINISH(listener.eventLoop());
+  //listener.push(ClientConnectionHandler{pipe, 1});
+  *config.quitEvent = listener.emplace_back(EventCallback {
+    [](EventListener &listener) {
+      listener.stop();
+      return EventStatus::Finished;
+    }
+  }).event();
+
+  EventStatus status;
+  do {
+    status = listener.run();
+  } while (status == EventStatus::Ok);
+
+  if (status == EventStatus::Failed) {
+    config.status = StatusEventFailed;
+  } else if (status == EventStatus::Finished) {
+    config.status = StatusOk;
+  }
 }
 

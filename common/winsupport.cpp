@@ -1,8 +1,8 @@
-#include "stdo/winsupport.h"
+#include "wsudo/winsupport.h"
 
 #include <codecvt>
 
-namespace stdo {
+namespace wsudo {
 
 #pragma warning(push)
 #pragma warning(disable: 4996) // codecvt deprecation warning
@@ -21,24 +21,22 @@ std::wstring to_utf16(std::string_view utf8str) {
 
 bool setThreadName(const wchar_t *name) {
   try {
-    return
-      LinkedModule(L"kernel32.dll")
-        .get<decltype(&SetThreadDescription)>("SetThreadDescription")
-        (GetCurrentThread(), name) == S_OK;
+    return LinkedModule(L"kernel32.dll")
+      .get<decltype(&SetThreadDescription)>("SetThreadDescription")(
+        GetCurrentThread(), name
+      ) == S_OK;
   } catch (module_load_error &) {
     return false;
   }
 }
 
 std::string getSystemStatusString(DWORD status) {
-  std::string msg;
-  constexpr int bufferSize = 256;
-  msg.resize(bufferSize);
+  constexpr DWORD bufferSize = 1024;
+  char buffer[bufferSize];
   auto size = FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM, nullptr, status, 0,
-                             msg.data(), bufferSize, nullptr);
-  msg.resize(size - 1); // Forget the NUL.
-  return msg;
+                             buffer, bufferSize, nullptr);
+  return std::string{buffer, buffer + size};
 }
 
-} // namespace stdo
+} // namespace wsudo
 

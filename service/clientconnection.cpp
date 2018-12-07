@@ -1,10 +1,10 @@
-#include "stdo/server.h"
-#include "stdo/ntapi.h"
+#include "wsudo/server.h"
+#include "wsudo/ntapi.h"
 
 #include <AclAPI.h>
 
-using namespace stdo;
-using namespace stdo::server;
+using namespace wsudo;
+using namespace wsudo::server;
 
 ClientConnectionHandler::ClientConnectionHandler(HANDLE pipe, int clientId)
   noexcept
@@ -16,7 +16,11 @@ void ClientConnectionHandler::createResponse(const char *header,
                                              std::string_view message)
 {
   assert(strlen(header) == 4);
-  _buffer.resize(4 + message.length());
+  size_t totalSize = 4 + message.length();
+  if (_buffer.size() < totalSize) {
+    // Keep size in chunks of PipeBufferSize
+    _buffer.reserve(totalSize / PipeBufferSize + PipeBufferSize);
+  }
   std::memcpy(_buffer.data(), header, 4);
   if (message.length()) {
     std::memcpy(_buffer.data() + 4, message.data(), message.length());
@@ -25,7 +29,6 @@ void ClientConnectionHandler::createResponse(const char *header,
 
 ClientConnectionHandler::Callback
 ClientConnectionHandler::connect(HANDLE pipe) {
-  resetBuffer();
   ConnectNamedPipe(pipe, _overlapped.get());
 
   switch (GetLastError()) {
@@ -46,7 +49,10 @@ ClientConnectionHandler::connect(HANDLE pipe) {
 
 ClientConnectionHandler::Callback
 ClientConnectionHandler::finishConnect() {
-  if (getOverlappedResult(_connection) != ERROR_SUCCESS) {
+  DWORD dummyBytesTransferred;
+  if (GetOverlappedResult(_connection, _overlapped.get(),
+                          &dummyBytesTransferred, false) != ERROR_SUCCESS)
+  {
     log::error("Client {}: error finalizing connection.", _clientId);
     return nullptr;
   }
@@ -73,9 +79,12 @@ ClientConnectionHandler::finishRead() {
   switch (endReadWrite(_connection)) {
   case EventStatus::Finished:
     break;
-  case EventStatus::InProgress:
+  case EventStatus::MoreData:
     log::trace("Client {}: More data to read.", _clientId);
-    return read();
+    return &ClientConnectionHandler::read;
+  case EventStatus::InProgress:
+    log::trace("Client {}: Finished reading", _clientId);
+    return &ClientConnectionHandler::finishRead;
   case EventStatus::Failed:
     log::error("Client {}: Finalizing read failed.", _clientId);
     return nullptr;
@@ -100,6 +109,8 @@ ClientConnectionHandler::respond() {
     log::error("Client {}: Write failed.", _clientId);
     return nullptr;
   case EventStatus::Finished:
+  case EventStatus::MoreData:
+    // TODO: Continue writing when necessary.
     log::trace("Client {}: Write finished.", _clientId);
     return nextCb(this);
   }
@@ -110,10 +121,15 @@ ClientConnectionHandler::respond() {
 template<bool Loop>
 ClientConnectionHandler::Callback
 ClientConnectionHandler::finishRespond() {
-  if (endReadWrite(_connection) != EventStatus::Finished) {
+  switch (endReadWrite(_connection)) {
+  case EventStatus::Finished:
+  case EventStatus::MoreData:
+    break;
+  default:
     log::error("Client {}: Finalizing write failed.", _clientId);
     return nullptr;
   }
+
   if constexpr (Loop) {
     return read();
   } else {
@@ -146,7 +162,7 @@ bool ClientConnectionHandler::dispatchMessage() {
 
   // Check if the header is still the same on exit; that means we forgot
   // to set it.
-  STDO_SCOPEEXIT_THIS {
+  WSUDO_SCOPEEXIT_THIS {
     if (_buffer.size() < 4 || !std::memcmp(_buffer.data(), header, 4)) {
       log::debug("Response was not set!");
       createResponse(msg::server::InternalError, "Unknown error.");
@@ -263,7 +279,7 @@ bool ClientConnectionHandler::tryToLogonUser(const char *username,
                getLastErrorString());
     return false;
   }
-  STDO_SCOPEEXIT { LocalFree(secDesc); };
+  WSUDO_SCOPEEXIT { LocalFree(secDesc); };
 
   SECURITY_ATTRIBUTES secAttr;
   secAttr.nLength = sizeof(SECURITY_ATTRIBUTES);

@@ -1,13 +1,13 @@
-#include "stdo/stdo.h"
+#include "wsudo/wsudo.h"
 
-namespace stdo {
+namespace wsudo {
 
 namespace log {
   std::shared_ptr<spdlog::logger> g_outLogger;
   std::shared_ptr<spdlog::logger> g_errLogger;
 }
 
-const wchar_t *const PipeFullPath = L"\\\\.\\pipe\\stdo_tokreq";
+const wchar_t *const PipeFullPath = L"\\\\.\\pipe\\wsudo_token_server";
 
 namespace msg {
   namespace client {
@@ -23,4 +23,4 @@ namespace msg {
   }
 } // namespace msg
 
-} // namespace stdo
+} // namespace wsudo
