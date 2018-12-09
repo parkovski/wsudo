@@ -27,6 +27,7 @@ find_package(fmt CONFIG REQUIRED)
 set(COMMON_SRC
   common.cpp
   events.cpp
+  overlapped.cpp
   winsupport.cpp
 )
 list(TRANSFORM COMMON_SRC PREPEND "common/")
@@ -39,7 +40,6 @@ list(TRANSFORM CLIENT_SRC PREPEND "client/")
 set(SERVICE_SRC
   clientconnection.cpp
   main.cpp
-  overlapped.cpp
   server.cpp
 )
 list(TRANSFORM SERVICE_SRC PREPEND "service/")

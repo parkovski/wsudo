@@ -28,7 +28,14 @@ class EventListener;
 // The callback in operator() is triggered when the event is signaled.
 class EventHandler {
 public:
-  virtual ~EventHandler() = 0;
+  EventHandler() = default;
+  EventHandler(const EventHandler &) = default;
+  EventHandler &operator=(const EventHandler &) = default;
+
+  EventHandler(EventHandler &&) = default;
+  EventHandler &operator=(EventHandler &&) = default;
+
+  virtual ~EventHandler() = default;
 
   // The Windows event that should trigger this event.
   virtual HANDLE event() const = 0;
@@ -42,22 +49,30 @@ public:
 };
 
 // Lambda wrapper event handler.
-template<
-  typename F,
-  bool AllowReset = false,
-  typename = std::is_invocable_r<EventStatus, F, EventListener &>
->
+template<typename F, bool AllowReset = false>
 class EventCallback final : public EventHandler {
   F _callback;
   HObject _event;
 
 public:
+  template <typename = std::is_invocable_r<EventStatus, F, EventListener &>>
   EventCallback(F &&callback) noexcept
     : _callback{std::move(callback)},
       _event{CreateEventW(nullptr, true, false, nullptr)}
   {}
 
+  EventCallback(const EventCallback<F, AllowReset> &callback) = delete;
+
+  typename EventCallback<F, AllowReset> &
+  operator=(const typename EventCallback<F, AllowReset> &) = delete;
+
+  EventCallback(EventCallback<F, AllowReset> &&other) = default;
+
+  typename EventCallback<F, AllowReset> &
+  operator=(typename EventCallback<F, AllowReset> &&other) = default;
+
   HANDLE event() const override { return _event; }
+
   bool reset() override {
     if constexpr (AllowReset) {
       ResetEvent(_event);
@@ -66,6 +81,7 @@ public:
       return false;
     }
   }
+
   EventStatus operator()(EventListener &listener) override {
     return _callback(listener);
   }
@@ -73,30 +89,26 @@ public:
 
 class EventOverlappedIO : public EventHandler {
   OVERLAPPED _overlapped;
-  std::vector<uint8_t> buffer;
+  std::vector<uint8_t> _buffer;
   size_t _readOffset;
   size_t _writeOffset;
 
   const size_t BufferDoublingLimit = 4;
 
-  EventStatus beginRead(HANDLE hFile) {
-    _readOffset = 0;
-    continueRead(hFile);
-  }
-  EventStatus continueRead(HANDLE hFile);
-  EventStatus beginWrite(HANDLE hFile) {
-    _writeOffset = 0;
-    continueWrite(hFile);
-  }
-  EventStatus continueWrite(HANDLE hFile);
+  EventStatus beginRead(HANDLE hFile);
+  EventStatus endRead(HANDLE hFile);
+  EventStatus beginWrite(HANDLE hFile);
+  EventStatus endWrite(HANDLE hFile);
 
 public:
   explicit EventOverlappedIO() noexcept;
+  ~EventOverlappedIO();
 
   EventOverlappedIO(const EventOverlappedIO &) = delete;
   EventOverlappedIO &operator=(const EventOverlappedIO &) = delete;
 
-  ~EventOverlappedIO();
+  EventOverlappedIO(EventOverlappedIO &&) = default;
+  EventOverlappedIO &operator=(EventOverlappedIO &&) = default;
 
   bool reset() override;
 
@@ -119,22 +131,12 @@ class EventListener final {
 
 public:
   explicit EventListener() = default;
+
   EventListener(const EventListener &) = delete;
-  EventListener(EventListener &&) = default;
-
   EventListener &operator=(const EventListener &) = delete;
-  EventListener &operator=(EventListener &&) = default;
 
-  // Move a unique_ptr into the event listener.
-  template<typename H>
-  std::enable_if_t<
-    std::is_convertible_v<H &, EventHandler &>,
-    H &
-  >
-  emplace_back(std::unique_ptr<H> &&handler) {
-    _events.emplace_back(handler->event());
-    return *_handlers.emplace_back(std::move(handler));
-  }
+  EventListener(EventListener &&) = default;
+  EventListener &operator=(EventListener &&) = default;
 
   template<typename H>
   std::enable_if_t<
@@ -146,6 +148,17 @@ public:
   >
   emplace_back(H &&handler) {
     return emplace_back(std::make_unique<H>(std::move(handler)));
+  }
+
+  // Move a unique_ptr into the event listener.
+  template<typename H>
+  std::enable_if_t<
+    std::is_convertible_v<H &, EventHandler &>,
+    H &
+  >
+  emplace_back(std::unique_ptr<H> &&handler) {
+    _events.emplace_back(handler->event());
+    return *_handlers.emplace_back(std::move(handler));
   }
 
   // Construct a handler in place.

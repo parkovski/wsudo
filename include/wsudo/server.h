@@ -49,7 +49,7 @@ public:
   explicit ClientListener() noexcept;
 
   bool reset() override;
-  EventStatus operator()(EventListener &) override;
+  events::EventStatus operator()(events::EventListener &) override;
 };
 
 class ClientSession final : public events::EventOverlappedIO {
@@ -57,7 +57,7 @@ public:
   explicit ClientSession(HPipeConnection pipe, int clientId) noexcept;
 
   bool reset() override;
-  EventStatus operator()(EventListener &) override;
+  events::EventStatus operator()(events::EventListener &) override;
 
 private:
   using Callback = recursive_mem_callback<ClientListener>;

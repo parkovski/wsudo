@@ -6,44 +6,11 @@ using namespace wsudo::events;
 
 // {{{ EventHandler
 
-EventHandler::~EventHandler() {
-  // Pure virtual destructor impl
-}
-
 bool EventHandler::reset() {
   return false;
 }
 
 // }}} EventHandler
-
-// {{{ EventOverlappedIO
-
-EventOverlappedIO::EventOverlappedIO() noexcept {
-  _overlapped.hEvent = CreateEventW(nullptr, true, false, nullptr);
-}
-
-EventOverlappedIO::~EventOverlappedIO() {
-  CloseHandle(_overlapped.hEvent);
-}
-
-EventStatus EventOverlappedIO::continueRead(HANDLE hFile) {
-  return EventStatus::Ok;
-}
-
-EventStatus EventOverlappedIO::continueWrite(HANDLE hFile) {
-  return EventStatus::Ok;
-}
-
-bool EventOverlappedIO::reset() {
-  // TODO
-  return false;
-}
-
-EventStatus EventOverlappedIO::operator()(EventListener &listener) {
-  return EventStatus::Ok;
-}
-
-// }}} EventOverlappedIO
 
 // {{{ EventListener
 
