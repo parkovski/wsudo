@@ -26,6 +26,7 @@ find_package(fmt CONFIG REQUIRED)
 
 set(COMMON_SRC
   common.cpp
+  events.cpp
   winsupport.cpp
 )
 list(TRANSFORM COMMON_SRC PREPEND "common/")

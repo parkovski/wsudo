@@ -2,6 +2,7 @@
 #define WSUDO_EVENTS_H
 
 #include <vector>
+#include <cstdint>
 
 #include "wsudo/winsupport.h"
 
@@ -138,8 +139,8 @@ public:
   template<typename H>
   std::enable_if_t<
     std::conjunction_v<
-      std::is_convertible<H &, EventHandler &>>,
-      std::is_nothrow_move_constructible<H>,
+      std::is_convertible<H &, EventHandler &>,
+      std::is_nothrow_move_constructible<H>
     >,
     H &
   >
@@ -152,7 +153,7 @@ public:
   std::enable_if_t<
     std::conjunction_v<
       std::is_convertible<H &, EventHandler &>,
-      std::is_constructible<H, Arg1, Arg2, Args...>
+      std::is_nothrow_constructible<H, Arg1, Arg2, Args...>
     >,
     H &
   >

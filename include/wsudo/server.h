@@ -3,10 +3,10 @@
 
 #include "wsudo/wsudo.h"
 #include "wsudo/winsupport.h"
+#include "wsudo/events.h"
 
 #include <memory>
 #include <type_traits>
-#include <exception>
 #include <vector>
 #include <string_view>
 
@@ -38,6 +38,40 @@ inline const char *statusToString(Status status) {
   case StatusEventFailed: return "event failed";
   }
 }
+
+// Event handlers {{{
+
+using HPipeConnection = Handle<HANDLE, DisconnectNamedPipe>;
+
+// Waits for a client connection, then pushes the session onto the event loop.
+class ClientListener final : public events::EventOverlappedIO {
+public:
+  explicit ClientListener() noexcept;
+
+  bool reset() override;
+  EventStatus operator()(EventListener &) override;
+};
+
+class ClientSession final : public events::EventOverlappedIO {
+public:
+  explicit ClientSession(HPipeConnection pipe, int clientId) noexcept;
+
+  bool reset() override;
+  EventStatus operator()(EventListener &) override;
+
+private:
+  using Callback = recursive_mem_callback<ClientListener>;
+
+  Callback readRequest();
+  Callback writeResponse();
+
+  int _clientId;
+  HPipeConnection _connection;
+  Callback _callback;
+  // HObject _userToken;
+};
+
+// Event handlers }}}
 
 #if 0
 class EventHandlerOverlapped : public EventHandler {

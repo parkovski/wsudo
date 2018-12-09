@@ -5,7 +5,6 @@
 #include <exception>
 #include <string>
 #include <string_view>
-#include <optional>
 
 namespace wsudo {
 
@@ -13,6 +12,7 @@ std::string to_utf8(std::wstring_view utf16str);
 std::wstring to_utf16(std::string_view utf8str);
 
 // Set thread name via new Win10 API, if it exists.
+// Returns false if the API was not found or failed.
 bool setThreadName(const wchar_t *name);
 
 // Convert a "GetLastError" code to string.
@@ -59,6 +59,7 @@ class LinkedModule {
   HMODULE _module;
 
 public:
+  // Throws a module_load_error on failure.
   LinkedModule(const wchar_t *dllName)
     : _name{to_utf8(dllName)},
       _module{GetModuleHandleW(dllName)}
@@ -68,12 +69,11 @@ public:
     }
   }
 
-  template<typename, typename> class Function;
-  // Note: F may have a calling convention; R(Args...) does not.
-  template<typename F, typename R, typename... Args>
-  class Function<F, R(*)(Args...)> {
+  template<typename F>
+  class Function {
     F _function;
   public:
+    // Throws a module_load_error on failure.
     Function(const LinkedModule &module, const char *name)
       : _function(reinterpret_cast<F>(GetProcAddress(module._module, name)))
     {
@@ -82,18 +82,21 @@ public:
       }
     }
 
-    R operator()(Args ...args) const {
+    template<typename... Args>
+    std::invoke_result_t<F, Args...>
+    operator()(Args &&...args) const {
       return _function(std::forward<Args>(args)...);
     }
   };
 
   template<typename F>
-  Function<F, F> get(const char *name) const {
-    return Function<F, F>{*this, name};
+  Function<F> get(const char *name) const {
+    return Function<F>{*this, name};
   }
 };
 
-// RAII wrapper around Windows HANDLE values.
+// RAII wrapper around Windows HANDLE values. Free should be the function that
+// closes this type of handle (e.g. CloseHandle)
 template<typename H, auto Free>
 class Handle {
   H _handle;
@@ -113,32 +116,27 @@ public:
     free();
   }
 
+  // Frees the old handle if any before assignment.
   Handle<H, Free> &operator=(Handle<H, Free> &&other) {
     free();
     _handle = other.take();
     return *this;
   }
 
+  // Frees the old handle if any before assignment.
   Handle<H, Free> &operator=(H newHandle) {
     free();
     _handle = newHandle;
     return *this;
   }
 
-  // Careful: Easy to leak resources with this.
-  H &operator*() {
-    return _handle;
-  }
-
-  const H &operator*() const {
-    return _handle;
-  }
-
-  // Careful: Easy to leak resources with this.
+  // Gets a pointer to the inner handle. Be careful not to leak memory when
+  // overwriting the handle value.
   H *operator&() {
     return &_handle;
   }
 
+  // Gets a const pointer to the inner handle.
   const H *operator&() const {
     return &_handle;
   }
@@ -150,19 +148,25 @@ public:
     return handle;
   }
 
+  // Implicit conversion to a Windows handle - makes it easier to pass to
+  // Win API functions.
   operator H() const {
     return _handle;
   }
 
+  // Returns true if the handle is not null - does not test the actual validity
+  // of the handle.
   bool good() const {
     return !!_handle;
   }
 
+  // Null test.
   explicit operator bool() const {
     return !!_handle;
   }
 };
 
+// Standard HANDLE with CloseHandle destructor.
 using HObject = Handle<HANDLE, CloseHandle>;
 
 } // namespace wsudo
