@@ -7,7 +7,7 @@ This is a very rough proof of concept, intended to show that it can be done. It 
 A terminal. Or two terminals currently. [See this short demo](https://raw.githubusercontent.com/parkovski/wsudo/assets/demo.mp4).
 
 ## How to build/run?
-Currently the only dependencies are spdlog and the Windows SDK. Note that if you are using vcpkg, spdlog requires an external fmt install but is not yet compatible with fmt v5, so you'll have to downgrade the port file. For convenience, the last working version of fmt was added at commit `178517052f42d428bb2f304946e635d3c1f318e9`. The project builds with CMake - I use the Ninja generator but the VS one is probably fine. After making sure your spdlog and fmt work, do:
+Currently the only dependencies are spdlog, fmt, and the Windows SDK. I use vcpkg to install these. The project builds with CMake - I use the Ninja generator but the VS one is probably fine. After making sure your spdlog and fmt work, do:
 
 ```powershell
 ...\wsudo> mkdir build
