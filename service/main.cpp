@@ -64,10 +64,6 @@ int wmain(int argc, wchar_t *argv[]) {
   // VC++ deadlock bug
   WSUDO_SCOPEEXIT { spdlog::drop_all(); };
 
-  server::Config config{ PipeFullPath, &gs_quitEventHandle };
-
-  log::info("WSudo Token Server: Pid = {}", GetCurrentProcessId());
-
   HANDLE hStdin = GetStdHandle(STD_INPUT_HANDLE);
   HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 
@@ -78,6 +74,8 @@ int wmain(int argc, wchar_t *argv[]) {
   SetConsoleMode(hStdout,
                  ENABLE_PROCESSED_OUTPUT | ENABLE_WRAP_AT_EOL_OUTPUT |
                  ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+
+  log::info("WSudo Token Server: Pid = {}", GetCurrentProcessId());
 
   // Clear control handlers and then set ours.
   if (!SetConsoleCtrlHandler(nullptr, false) ||
@@ -94,6 +92,7 @@ int wmain(int argc, wchar_t *argv[]) {
     SetConsoleMode(hStdout, stdoutMode);
   };
 
+  server::Config config{ PipeFullPath, &gs_quitEventHandle };
   std::thread serverThread{&server::serverMain, std::ref(config)};
   serverThread.join();
   log::info("Event loop returned {}", server::statusToString(config.status));

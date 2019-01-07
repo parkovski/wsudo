@@ -6,6 +6,9 @@ using namespace wsudo::events;
 
 // {{{ EventHandler
 
+EventHandler::~EventHandler() {
+}
+
 bool EventHandler::reset() {
   return false;
 }
@@ -14,27 +17,20 @@ bool EventHandler::reset() {
 
 // {{{ EventListener
 
-void EventListener::remove(size_t index) {
-  assert(index < _handlers.size());
-
-  _events.erase(_events.cbegin() + index);
-  _handlers.erase(_handlers.cbegin() + index);
-}
-
 EventStatus EventListener::next(DWORD timeout) {
   log::trace("Waiting on {} events", _events.size());
 
-  auto result = WaitForMultipleObjects(
+  auto waitResult = WaitForMultipleObjects(
     static_cast<DWORD>(_events.size()), &_events[0], false, timeout
   );
 
-  if (result == WAIT_TIMEOUT) {
+  if (waitResult == WAIT_TIMEOUT) {
     log::error("WaitForMultipleObjects timed out.");
     return EventStatus::Failed;
-  } else if (result >= WAIT_OBJECT_0 &&
-             result < WAIT_OBJECT_0 + _events.size())
+  } else if (waitResult >= WAIT_OBJECT_0 &&
+             waitResult < WAIT_OBJECT_0 + _events.size())
   {
-    size_t index = static_cast<size_t>(result - WAIT_OBJECT_0);
+    size_t index = static_cast<size_t>(waitResult - WAIT_OBJECT_0);
     log::trace("Event #{} signaled.", index);
 
     switch ((*_handlers[index])(*this)) {
@@ -53,21 +49,21 @@ EventStatus EventListener::next(DWORD timeout) {
       remove(index);
       break;
     }
-  } else if (result >= WAIT_ABANDONED_0 &&
-             result < WAIT_ABANDONED_0 + _events.size())
+  } else if (waitResult >= WAIT_ABANDONED_0 &&
+             waitResult < WAIT_ABANDONED_0 + _events.size())
 
   {
-    size_t index = (size_t)(result - WAIT_ABANDONED_0);
+    size_t index = (size_t)(waitResult - WAIT_ABANDONED_0);
     log::error("Mutex abandoned state signaled for handler #{}.", index);
     remove(index);
     return EventStatus::Failed;
-  } else if (result == WAIT_FAILED) {
+  } else if (waitResult == WAIT_FAILED) {
     log::critical("WaitForMultipleObjects failed: {}",
-                  getLastErrorString());
+                  lastErrorString());
     return EventStatus::Failed;
   } else {
-    log::critical("WaitForMultipleObjects returned 0x{:X}: ", result,
-                  getLastErrorString());
+    log::critical("WaitForMultipleObjects returned 0x{:X}: ", waitResult,
+                  lastErrorString());
     return EventStatus::Failed;
   }
 
@@ -85,6 +81,13 @@ EventStatus EventListener::run(DWORD timeout) {
   } while (isRunning());
 
   return EventStatus::Ok;
+}
+
+void EventListener::remove(size_t index) {
+  assert(index < _handlers.size());
+
+  _events.erase(_events.cbegin() + index);
+  _handlers.erase(_handlers.cbegin() + index);
 }
 
 // }}} EventListener

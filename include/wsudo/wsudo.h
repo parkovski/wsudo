@@ -78,7 +78,7 @@ static inline void critical(const char *fmt, Args &&...args)
 // endless recursive callbacks.
 template<typename... Args>
 struct recursive_callback {
-  using pointer = struct recursive_callback<Args...> (*)(Args...);
+  using pointer = recursive_callback (*)(Args...);
 
   // Default (null pointer) constructor.
   constexpr recursive_callback() noexcept
@@ -91,20 +91,18 @@ struct recursive_callback {
   {}
 
   // Copy
-  recursive_callback(const recursive_callback<Args...> &) = default;
+  recursive_callback(const recursive_callback &) = default;
 
   // Copy assign
-  recursive_callback<Args...> &
-  operator=(const recursive_callback<Args...> &) = default;
+  recursive_callback & operator=(const recursive_callback &) = default;
 
   // Call the function, returning the next callback.
-  constexpr inline recursive_callback<Args...>
-  operator()(Args &&...args) const {
+  constexpr inline recursive_callback operator()(Args &&...args) const {
     return function(std::forward<Args>(args)...);
   }
 
   // Call the function, replacing it with the returned callback.
-  constexpr inline bool swap_call(Args &&...args) {
+  constexpr inline bool call_and_swap(Args &&...args) {
     function = function(std::forward<Args>(args)...);
     return !!function;
   }
@@ -119,7 +117,7 @@ private:
 // Wrapper for recursive member function callbacks.
 template<typename T, typename... Args>
 struct recursive_mem_callback {
-  using pointer = struct recursive_mem_callback<T> (T::*)(Args...);
+  using pointer = recursive_mem_callback (T::*)(Args...);
 
   // Default (null pointer) constructor.
   constexpr recursive_mem_callback() noexcept
@@ -132,20 +130,18 @@ struct recursive_mem_callback {
   {}
 
   // Copy.
-  recursive_mem_callback(const recursive_mem_callback<T, Args...> &) = default;
+  recursive_mem_callback(const recursive_mem_callback &) = default;
 
   // Copy assign.
-  recursive_mem_callback<T, Args...> &
-  operator=(const recursive_mem_callback<T, Args...> &) = default;
+  recursive_mem_callback & operator=(const recursive_mem_callback &) = default;
 
   // Call the function, returning the next callback.
-  constexpr inline recursive_mem_callback<T, Args...>
-  operator()(T &self, Args &&...args) {
-    return self.*function(std::forward<Args>(args)...);
+  constexpr inline recursive_mem_callback operator()(T &self, Args &&...args) {
+    return (self.*function)(std::forward<Args>(args)...);
   }
 
   // Call the function, replacing it with the returned callback.
-  constexpr inline bool swap_call(T &self, Args &&...args) {
+  constexpr inline bool call_and_swap(T &self, Args &&...args) {
     function = self.*function(std::forward<Args>(args)...);
     return !!function;
   }
@@ -165,7 +161,7 @@ namespace detail {
     OnExit _onExit;
   public:
     explicit ScopeExit(OnExit onExit) : _onExit(std::move(onExit)) {}
-    ScopeExit<OnExit> &operator=(const ScopeExit<OnExit> &) = delete;
+    ScopeExit &operator=(const ScopeExit &) = delete;
     ~ScopeExit() {
       _onExit();
     }
@@ -198,6 +194,13 @@ namespace detail {
 #define WSUDO_SCOPEEXIT_THIS \
   [[maybe_unused]] auto const &WSUDO_CONCAT4(_scopeExit_, __func__, _, __LINE__) = \
     ::wsudo::detail::ScopeExitHelper{} % [&, this]()
+
+#ifndef NDEBUG
+# include <cassert>
+# define WSUDO_UNREACHABLE(why) do { assert(0 && (why)); __assume(0); } while(0)
+#else
+# define WSUDO_UNREACHABLE(why) __assume(0)
+#endif
 
 #endif // WSUDO_WSUDO_H
 

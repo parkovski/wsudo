@@ -16,11 +16,11 @@ std::wstring to_utf16(std::string_view utf8str);
 bool setThreadName(const wchar_t *name);
 
 // Convert a "GetLastError" code to string.
-std::string getSystemStatusString(DWORD status);
+std::string lastErrorString(DWORD status);
 
 // Convenience GetLastError->string.
-inline std::string getLastErrorString() {
-  return getSystemStatusString(::GetLastError());
+inline std::string lastErrorString() {
+  return lastErrorString(::GetLastError());
 }
 
 // Dynamic module (DLL) load error.
@@ -32,7 +32,7 @@ public:
     : _error{GetLastError()},
       _message{
         std::string("Module ") + module + " load failed: " +
-          getSystemStatusString(_error)
+          lastErrorString(_error)
       }
   {}
 
@@ -40,7 +40,7 @@ public:
     : _error{GetLastError()},
       _message{
         std::string("Function ") + module + "!" + function + " not found: " +
-          getSystemStatusString(_error)
+          lastErrorString(_error)
       }
   {}
 
@@ -69,11 +69,12 @@ public:
     }
   }
 
-  template<typename F>
-  class Function {
+  template<typename, typename> class Function;
+  // Note: F may have a calling convention; R(Args...) does not.
+  template<typename F, typename R, typename... Args>
+  class Function<F, R(*)(Args...)> {
     F _function;
   public:
-    // Throws a module_load_error on failure.
     Function(const LinkedModule &module, const char *name)
       : _function(reinterpret_cast<F>(GetProcAddress(module._module, name)))
     {
@@ -81,17 +82,14 @@ public:
         throw module_load_error{module._name.c_str(), name};
       }
     }
-
-    template<typename... Args>
-    std::invoke_result_t<F, Args...>
-    operator()(Args &&...args) const {
+    R operator()(Args ...args) const {
       return _function(std::forward<Args>(args)...);
     }
   };
 
   template<typename F>
-  Function<F> get(const char *name) const {
-    return Function<F>{*this, name};
+  Function<F, F> get(const char *name) const {
+    return Function<F, F>{*this, name};
   }
 };
 

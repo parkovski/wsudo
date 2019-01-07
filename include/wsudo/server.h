@@ -1,14 +1,15 @@
 #ifndef WSUDO_SERVER_H
 #define WSUDO_SERVER_H
 
-#include "wsudo/wsudo.h"
-#include "wsudo/winsupport.h"
-#include "wsudo/events.h"
+#include "wsudo.h"
+#include "winsupport.h"
+#include "events.h"
 
 #include <memory>
 #include <type_traits>
 #include <vector>
 #include <string_view>
+#include <AclAPI.h>
 
 namespace wsudo::server {
 
@@ -39,138 +40,63 @@ inline const char *statusToString(Status status) {
   }
 }
 
-// Event handlers {{{
-
-using HPipeConnection = Handle<HANDLE, DisconnectNamedPipe>;
-
-// Waits for a client connection, then pushes the session onto the event loop.
-class ClientListener final : public events::EventOverlappedIO {
+// Creates connections to a named pipe with the necessary security attributes.
+class NamedPipeHandleFactory final {
 public:
-  explicit ClientListener() noexcept;
+  explicit NamedPipeHandleFactory(LPCWSTR pipeName) noexcept;
 
-  bool reset() override;
-  events::EventStatus operator()(events::EventListener &) override;
-};
+  // Create a new pipe connection.
+  HObject operator()();
 
-class ClientSession final : public events::EventOverlappedIO {
-public:
-  explicit ClientSession(HPipeConnection pipe, int clientId) noexcept;
-
-  bool reset() override;
-  events::EventStatus operator()(events::EventListener &) override;
+  // Returns true if initialization succeeded and a connection can be created.
+  explicit operator bool() const;
 
 private:
-  using Callback = recursive_mem_callback<ClientListener>;
-
-  Callback readRequest();
-  Callback writeResponse();
-
-  int _clientId;
-  HPipeConnection _connection;
-  Callback _callback;
-  // HObject _userToken;
+  LPCWSTR _pipeName;
+  SID_IDENTIFIER_AUTHORITY _sidAuth;
+  Handle<PSID, FreeSid> _sid;
+  EXPLICIT_ACCESS_W _explicitAccess;
+  Handle<PACL, LocalFree> _acl;
+  Handle<PSECURITY_DESCRIPTOR, LocalFree> _securityDescriptor;
+  SECURITY_ATTRIBUTES _securityAttributes;
 };
 
-// Event handlers }}}
-
-#if 0
-class EventHandlerOverlapped : public EventHandler {
-protected:
-  std::unique_ptr<OVERLAPPED> _overlapped;
-  std::vector<char> _buffer;
-  size_t _messageOffset;
-
-  // Buffer size will stop doubling here and grow linearly. This is the amount
-  // of times the buffer will double, so the actual size will be this number
-  // times PipeBufferSize.
-  const size_t _bufferDoublingLimit = 4;
-
-  EventStatus beginRead(HANDLE hFile);
-  EventStatus continueRead(HANDLE hFile);
-  EventStatus beginWrite(HANDLE hFile);
-  EventStatus continueWrite(HANDLE hFile);
-
-  // Returns MoreData when EOF is not reached.
-  EventStatus endReadWrite(HANDLE hFile);
-
+class ClientConnectionHandler : public events::EventOverlappedIO {
 public:
-  explicit EventHandlerOverlapped() noexcept
-    : _overlapped{std::make_unique<OVERLAPPED>()}, _messageOffset{0}
-  {
-    _overlapped->hEvent = CreateEventW(nullptr, true, false, nullptr);
-    _buffer.reserve(PipeBufferSize);
+  using Self = ClientConnectionHandler;
+  using Callback = recursive_mem_callback<Self>;
+
+  explicit ClientConnectionHandler(HObject pipe, int clientId) noexcept;
+
+  bool reset() override;
+
+  events::EventStatus operator()(events::EventListener &) override;
+
+protected:
+  HANDLE fileHandle() const override {
+    return _pipe;
   }
 
-  EventHandlerOverlapped(EventHandlerOverlapped &&other) = default;
-
-  ~EventHandlerOverlapped() {
-    if (_overlapped) {
-      CloseHandle(_overlapped->hEvent);
-    }
-  }
-
-  EventHandlerOverlapped &operator=(EventHandlerOverlapped &&other) = default;
-
-  HANDLE event() const override { return _overlapped->hEvent; }
-  void resetEvent() { ResetEvent(_overlapped->hEvent); }
-};
-
-using HPipeConnection = Handle<HANDLE, DisconnectNamedPipe>;
-class ClientConnectionHandler : public EventHandlerOverlapped {
-  struct Callback {
-    using Function = Callback (ClientConnectionHandler::*)();
-
-    Callback() noexcept : function(nullptr) {}
-    Callback(Function function) noexcept : function(function) {}
-    Callback(const Callback &) = default;
-    Callback &operator=(const Callback &) = default;
-
-    Callback operator()(ClientConnectionHandler *self) {
-      return (self->*function)();
-    }
-
-    explicit operator bool() const { return !!function; }
-
-  private:
-    Function function;
-  };
-
+private:
+  HObject _pipe;
   int _clientId;
-  HPipeConnection _connection{};
-  Callback _callback{};
+  Callback _callback;
   HObject _userToken{};
 
   void createResponse(const char *header,
                       std::string_view message = std::string_view{});
 
-  Callback connect(HANDLE pipe);
-  Callback finishConnect();
+  Callback beginConnect();
+  Callback endConnect();
   Callback read();
-  Callback finishRead();
   Callback respond();
-  template<bool Loop>
-  Callback finishRespond();
-  Callback reset();
+  Callback resetConnection();
 
   // Returns true to read another message, false to reset the connection.
   bool dispatchMessage();
   bool tryToLogonUser(const char *username, const char *password);
   bool bless(HANDLE remoteHandle);
-
-public:
-  explicit ClientConnectionHandler(HANDLE pipe, int clientId) noexcept;
-
-  void reset2();
-  bool isWaitingForConnection();
-
-  EventStatus operator()(EventListener &) override {
-    if (!_callback || !(_callback = _callback(this))) {
-      return EventStatus::Failed;
-    }
-    return EventStatus::InProgress;
-  }
 };
-#endif
 
 struct Config {
   // Named pipe filename.

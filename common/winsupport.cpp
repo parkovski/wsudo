@@ -30,7 +30,7 @@ bool setThreadName(const wchar_t *name) {
   }
 }
 
-std::string getSystemStatusString(DWORD status) {
+std::string lastErrorString(DWORD status) {
   constexpr DWORD bufferSize = 1024;
   char buffer[bufferSize];
   auto size = FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM, nullptr, status, 0,

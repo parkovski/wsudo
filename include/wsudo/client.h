@@ -1,8 +1,8 @@
 #ifndef WSUDO_CLIENT_H
 #define WSUDO_CLIENT_H
 
-#include "wsudo/wsudo.h"
-#include "wsudo/winsupport.h"
+#include "wsudo.h"
+#include "winsupport.h"
 
 #include <vector>
 

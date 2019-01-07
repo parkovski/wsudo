@@ -5,103 +5,141 @@
 using namespace wsudo;
 using namespace wsudo::events;
 
-template<int WordSize = sizeof(size_t)>
-static inline void setOverlappedOffset(LPOVERLAPPED overlapped, size_t offset);
+// Helpers {{{
 
-template<>
-inline void setOverlappedOffset<4>(LPOVERLAPPED overlapped, size_t offset) {
+inline void setOverlappedOffset(LPOVERLAPPED overlapped, size_t offset) {
   overlapped->Offset = static_cast<DWORD>(offset);
-  overlapped->OffsetHigh = 0;
+  if constexpr (sizeof(size_t) == 4) {
+    overlapped->OffsetHigh = 0;
+  } else if (sizeof(size_t) == 8) {
+    overlapped->OffsetHigh = static_cast<DWORD>(offset >> 4);
+  }
+
+  // Supposed to zero unused members before use.
+  overlapped->Internal = 0;
+  overlapped->InternalHigh = 0;
 }
 
-template<>
-inline void setOverlappedOffset<8>(LPOVERLAPPED overlapped, size_t offset) {
-  overlapped->Offset = static_cast<DWORD>(offset);
-  overlapped->OffsetHigh = static_cast<DWORD>(offset >> 4);
-}
+// }}}
 
-EventOverlappedIO::EventOverlappedIO() noexcept
+EventOverlappedIO::EventOverlappedIO(bool isEventSet) noexcept
   : _overlapped{},
-    _readOffset{0},
-    _writeOffset{0}
+    _offset{0},
+    _ioState{IOState::Inactive}
 {
-  _overlapped.hEvent = CreateEventW(nullptr, true, false, nullptr);
+  _overlapped.hEvent = CreateEventW(nullptr, true, isEventSet, nullptr);
 }
 
 EventOverlappedIO::~EventOverlappedIO() {
   CloseHandle(_overlapped.hEvent);
 }
 
-EventStatus EventOverlappedIO::beginRead(HANDLE hFile) {
-  setOverlappedOffset<>(&_overlapped, _readOffset);
+EventStatus EventOverlappedIO::beginRead() {
+  _ioState = IOState::Reading;
+  setOverlappedOffset(&_overlapped, _offset);
+  _buffer.reserve(_offset + ChunkSize);
 
-  if (ReadFile(hFile, _buffer.data() + _readOffset, PipeBufferSize,
+  if (ReadFile(fileHandle(), _buffer.data() + _offset, ChunkSize,
                nullptr, &_overlapped))
   {
     // Interpret the results.
-    return endRead(hFile);
-  } else if (GetLastError() == ERROR_IO_PENDING) {
+    return endRead();
+  }
+  auto error = GetLastError();
+  if (error == ERROR_IO_PENDING || error == ERROR_MORE_DATA) {
     log::trace("Read in progress");
     return EventStatus::Ok;
   } else {
-    log::error("ReadFile failed: {}", getLastErrorString());
+    log::error("ReadFile failed: {}", lastErrorString(error));
+    _ioState = IOState::Failed;
     return EventStatus::Failed;
   }
 }
 
-EventStatus EventOverlappedIO::endRead(HANDLE hFile) {
-  _buffer.reserve(_buffer.capacity() + PipeBufferSize);
-
-  // TODO: How to know how much was read?
-  // Count at beginning? Null? What is the maximum size of a single message?
-  // Just read till we're done? Do we get an EOF message?
+EventStatus EventOverlappedIO::endRead() {
   DWORD bytesTransferred;
-  if (GetOverlappedResult(hFile, &_overlapped, &bytesTransferred, false)) {
-    _readOffset += bytesTransferred;
-    log::trace("Read finished: {} bytes", bytesTransferred);
+  if (GetOverlappedResult(fileHandle(), &_overlapped, &bytesTransferred, false))
+  {
+    _offset += bytesTransferred;
+    log::trace("Read finished: {} bytes", _offset);
+    _buffer.resize(_offset);
+    _ioState = IOState::Inactive;
     return EventStatus::Finished;
   }
+  auto error = GetLastError();
+  if (error == ERROR_IO_PENDING) {
+    return EventStatus::Ok;
+  } else if (error == ERROR_MORE_DATA) {
+    return beginRead();
+  }
+  log::error("Read failed: {}", lastErrorString(error));
+  _ioState = IOState::Failed;
+  return EventStatus::Failed;
 }
 
-EventStatus EventOverlappedIO::beginWrite(HANDLE hFile) {
-  setOverlappedOffset<>(&_overlapped, _writeOffset);
+EventStatus EventOverlappedIO::beginWrite() {
+  _ioState = IOState::Writing;
+  setOverlappedOffset(&_overlapped, _offset);
 
-  DWORD writeSize;
-  if (_buffer.size() - _writeOffset > PipeBufferSize) {
-    writeSize = PipeBufferSize;
-  } else {
-    writeSize = static_cast<DWORD>(_buffer.size());
-  }
-
-  if (WriteFile(hFile, _buffer.data() + _writeOffset, writeSize,
-                nullptr, &_overlapped))
+  if (WriteFile(fileHandle(), _buffer.data() + _offset,
+                static_cast<DWORD>(_buffer.size()), nullptr, &_overlapped))
   {
     // Interpret the results.
-    return endWrite(hFile);
+    return endWrite();
   } else if (GetLastError() == ERROR_IO_PENDING) {
     log::trace("Write in progress");
     return EventStatus::Ok;
   } else {
-    log::error("WriteFile failed: {}", getLastErrorString());
+    log::error("WriteFile failed: {}", lastErrorString());
+    _ioState = IOState::Failed;
     return EventStatus::Failed;
   }
 }
 
-EventStatus EventOverlappedIO::endWrite(HANDLE hFile) {
+EventStatus EventOverlappedIO::endWrite() {
   DWORD bytesTransferred;
-  if (GetOverlappedResult(hFile, &_overlapped, &bytesTransferred, false)) {
-    _writeOffset += bytesTransferred;
-    if (_writeOffset == _buffer.size()) {
-      log::trace("Write finished: {} bytes", _writeOffset);
+  if (GetOverlappedResult(fileHandle(), &_overlapped, &bytesTransferred, false))
+  {
+    _offset += bytesTransferred;
+    if (_offset == _buffer.size()) {
+      log::trace("Write finished: {} bytes", _offset);
+      _ioState = IOState::Inactive;
       return EventStatus::Finished;
-    } else if (_writeOffset > _buffer.size()) {
+    } else if (_offset > _buffer.size()) {
       log::warn("More data written ({} B) than expected ({} B)",
-                _writeOffset, _buffer.size());
+                _offset, _buffer.size());
+      _ioState = IOState::Inactive;
       return EventStatus::Finished;
     } else {
-      log::trace("Write in progress: {}%", _writeOffset / _buffer.size());
-      return EventStatus::Ok;
+      log::trace("Write in progress: {}%", _offset / _buffer.size());
+      return beginWrite();
     }
   }
+  if (GetLastError() == ERROR_IO_PENDING) {
+    return EventStatus::Ok;
+  }
+  log::error("Write failed: {}", lastErrorString());
+  _ioState = IOState::Failed;
+  return EventStatus::Failed;
+}
+
+bool EventOverlappedIO::reset() {
+  // TODO: These should be able to be reused by the ClientListener.
+  return false;
+}
+
+EventStatus EventOverlappedIO::operator()(EventListener &listener) {
+  switch (_ioState) {
+  case IOState::Inactive:
+    return EventStatus::Finished;
+  case IOState::Reading:
+    return endRead();
+  case IOState::Writing:
+    return endWrite();
+  case IOState::Failed:
+    return EventStatus::Failed;
+  }
+
+  WSUDO_UNREACHABLE("Invalid IO State");
 }
 

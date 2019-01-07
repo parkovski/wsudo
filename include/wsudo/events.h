@@ -4,7 +4,8 @@
 #include <vector>
 #include <cstdint>
 
-#include "wsudo/winsupport.h"
+#include "wsudo.h"
+#include "winsupport.h"
 
 /**
  * Windows Event Server/Client
@@ -35,7 +36,7 @@ public:
   EventHandler(EventHandler &&) = default;
   EventHandler &operator=(EventHandler &&) = default;
 
-  virtual ~EventHandler() = default;
+  virtual ~EventHandler() = 0;
 
   // The Windows event that should trigger this event.
   virtual HANDLE event() const = 0;
@@ -49,27 +50,15 @@ public:
 };
 
 // Lambda wrapper event handler.
-template<typename F, bool AllowReset = false>
+template<typename F, bool AllowReset = false,
+         typename = std::enable_if_t<std::is_invocable_r_v<EventStatus, F,
+                                                           EventListener &>>>
 class EventCallback final : public EventHandler {
-  F _callback;
-  HObject _event;
-
 public:
-  template <typename = std::is_invocable_r<EventStatus, F, EventListener &>>
   EventCallback(F &&callback) noexcept
     : _callback{std::move(callback)},
       _event{CreateEventW(nullptr, true, false, nullptr)}
   {}
-
-  EventCallback(const EventCallback<F, AllowReset> &callback) = delete;
-
-  typename EventCallback<F, AllowReset> &
-  operator=(const typename EventCallback<F, AllowReset> &) = delete;
-
-  EventCallback(EventCallback<F, AllowReset> &&other) = default;
-
-  typename EventCallback<F, AllowReset> &
-  operator=(typename EventCallback<F, AllowReset> &&other) = default;
 
   HANDLE event() const override { return _event; }
 
@@ -85,23 +74,19 @@ public:
   EventStatus operator()(EventListener &listener) override {
     return _callback(listener);
   }
+
+private:
+  F _callback;
+  HObject _event;
 };
 
+// Handles overlapped IO operations when the event is triggered.
 class EventOverlappedIO : public EventHandler {
-  OVERLAPPED _overlapped;
-  std::vector<uint8_t> _buffer;
-  size_t _readOffset;
-  size_t _writeOffset;
-
-  const size_t BufferDoublingLimit = 4;
-
-  EventStatus beginRead(HANDLE hFile);
-  EventStatus endRead(HANDLE hFile);
-  EventStatus beginWrite(HANDLE hFile);
-  EventStatus endWrite(HANDLE hFile);
-
 public:
-  explicit EventOverlappedIO() noexcept;
+  EventOverlappedIO() = delete;
+  /// @param isEventSet Should action be taken immediately (true), or should we
+  /// wait until the event is triggered another way (false)?
+  explicit EventOverlappedIO(bool isEventSet) noexcept;
   ~EventOverlappedIO();
 
   EventOverlappedIO(const EventOverlappedIO &) = delete;
@@ -116,19 +101,41 @@ public:
 
   // Subclasses should call this first to handle chunked reading/writing.
   EventStatus operator()(EventListener &) override;
+
+protected:
+  OVERLAPPED _overlapped;
+  std::vector<uint8_t> _buffer;
+
+  // Overrides should return an overlapped readable/writable handle here.
+  virtual HANDLE fileHandle() const = 0;
+
+  EventStatus readToBuffer() { _offset = 0; return beginRead(); }
+  EventStatus writeFromBuffer() { _offset = 0; return beginWrite(); }
+
+private:
+  // Position in buffer to begin reading or writing, depending on IO state.
+  size_t _offset;
+
+  enum class IOState {
+    Inactive,
+    Reading,
+    Writing,
+    Failed,
+  } _ioState;
+
+  const size_t BufferDoublingLimit = 4;
+
+  // Max amount to read/write at once.
+  const DWORD ChunkSize = static_cast<DWORD>(PipeBufferSize);
+
+  EventStatus beginRead();
+  EventStatus endRead();
+  EventStatus beginWrite();
+  EventStatus endWrite();
 };
 
+// Manages a set of event handlers.
 class EventListener final {
-  // List of events to pass to WaitForMultipleObjects.
-  std::vector<HANDLE> _events;
-  // List of handlers, must be kept in sync with the event list.
-  std::vector<std::unique_ptr<EventHandler>> _handlers;
-  // Active flag.
-  bool _running = true;
-
-  // Remove an event handler from the list.
-  void remove(size_t index);
-
 public:
   explicit EventListener() = default;
 
@@ -138,18 +145,6 @@ public:
   EventListener(EventListener &&) = default;
   EventListener &operator=(EventListener &&) = default;
 
-  template<typename H>
-  std::enable_if_t<
-    std::conjunction_v<
-      std::is_convertible<H &, EventHandler &>,
-      std::is_nothrow_move_constructible<H>
-    >,
-    H &
-  >
-  emplace_back(H &&handler) {
-    return emplace_back(std::make_unique<H>(std::move(handler)));
-  }
-
   // Move a unique_ptr into the event listener.
   template<typename H>
   std::enable_if_t<
@@ -158,22 +153,34 @@ public:
   >
   emplace_back(std::unique_ptr<H> &&handler) {
     _events.emplace_back(handler->event());
-    return *_handlers.emplace_back(std::move(handler));
+    return static_cast<H &>(*_handlers.emplace_back(std::move(handler)));
   }
 
-  // Construct a handler in place.
-  template<typename H, typename Arg1, typename Arg2, typename... Args>
+  // Move a raw handler into the event listener.
+  template<typename H>
   std::enable_if_t<
     std::conjunction_v<
       std::is_convertible<H &, EventHandler &>,
-      std::is_nothrow_constructible<H, Arg1, Arg2, Args...>
+      std::is_move_constructible<H>
     >,
     H &
   >
-  emplace_back(Arg1 &&arg1, Arg2 &&arg2, Args &&...args) {
+  emplace_back(H &&handler) {
+    return emplace_back(std::make_unique<H>(std::forward<H>(handler)));
+  }
+
+  // Construct a handler in place.
+  template<typename H, typename Arg1, typename... Args>
+  std::enable_if_t<
+    std::conjunction_v<
+      std::is_convertible<H &, EventHandler &>,
+      std::is_constructible<H, Arg1, Args...>
+    >,
+    H &
+  >
+  emplace_back(Arg1 &&arg1, Args &&...args) {
     return emplace_back(std::make_unique<H>(
       std::forward<Arg1>(arg1),
-      std::forward<Arg2>(arg2),
       std::forward<Args>(args)...
     ));
   }
@@ -187,6 +194,17 @@ public:
 
   bool isRunning() const { return _running; }
   void stop() { _running = false; }
+
+private:
+  // List of events to pass to WaitForMultipleObjects.
+  std::vector<HANDLE> _events;
+  // List of handlers, must be kept in sync with the event list.
+  std::vector<std::unique_ptr<EventHandler>> _handlers;
+  // Active flag.
+  bool _running;
+
+  // Remove an event handler from the list.
+  void remove(size_t index);
 };
 
 } // namespace wsudo::events

@@ -5,11 +5,46 @@
 
 using namespace wsudo;
 using namespace wsudo::server;
+using namespace wsudo::events;
 
-ClientConnectionHandler::ClientConnectionHandler(HANDLE pipe, int clientId)
+ClientConnectionHandler::ClientConnectionHandler(HObject pipe, int clientId)
   noexcept
-  : _clientId{clientId}, _callback{connect(pipe)}
+  : EventOverlappedIO{true},
+    _pipe{std::move(pipe)},
+    _clientId{clientId},
+    _callback{&Self::beginConnect}
 {
+}
+
+bool ClientConnectionHandler::reset() {
+  EventOverlappedIO::reset();
+
+  _userToken = nullptr;
+  if (_pipe && !DisconnectNamedPipe(_pipe)) {
+    return false;
+  }
+  log::trace("Client {}: Resetting connection.", _clientId);
+  _callback = &Self::beginConnect;
+  SetEvent(_overlapped.hEvent);
+  return true;
+}
+
+EventStatus ClientConnectionHandler::operator()(EventListener &listener) {
+  // First see if there is any overlapped IO to process.
+  switch (EventOverlappedIO::operator()(listener)) {
+    case EventStatus::Finished:
+      break;
+    case EventStatus::Failed:
+      return EventStatus::Failed;
+    case EventStatus::Ok:
+      return EventStatus::Ok;
+  }
+
+  // No IO, so move on to the next step.
+  if (!_callback || !(_callback = _callback(*this))) {
+    return EventStatus::Failed;
+  }
+  return EventStatus::Ok;
 }
 
 void ClientConnectionHandler::createResponse(const char *header,
@@ -28,29 +63,29 @@ void ClientConnectionHandler::createResponse(const char *header,
 }
 
 ClientConnectionHandler::Callback
-ClientConnectionHandler::connect(HANDLE pipe) {
-  ConnectNamedPipe(pipe, _overlapped.get());
+ClientConnectionHandler::beginConnect() {
+  if (ConnectNamedPipe(_pipe, &_overlapped)) {
+    return read();
+  }
 
   switch (GetLastError()) {
   case ERROR_IO_PENDING:
     log::trace("Client {}: scheduling client connection callback.", _clientId);
-    _connection = pipe;
-    return &ClientConnectionHandler::finishConnect;
+    return &Self::endConnect;
   case ERROR_PIPE_CONNECTED:
     log::trace("Client {}: already connected; reading.", _clientId);
-    _connection = pipe;
-    return finishConnect();
+    return endConnect();
   default:
     log::error("Client {}: ConnectNamedPipe failed: {}", _clientId,
-               getLastErrorString());
+               lastErrorString());
     return nullptr;
   }
 }
 
 ClientConnectionHandler::Callback
-ClientConnectionHandler::finishConnect() {
+ClientConnectionHandler::endConnect() {
   DWORD dummyBytesTransferred;
-  if (GetOverlappedResult(_connection, _overlapped.get(),
+  if (GetOverlappedResult(_pipe, &_overlapped,
                           &dummyBytesTransferred, false) != ERROR_SUCCESS)
   {
     log::error("Client {}: error finalizing connection.", _clientId);
@@ -61,100 +96,61 @@ ClientConnectionHandler::finishConnect() {
 
 ClientConnectionHandler::Callback
 ClientConnectionHandler::read() {
-  switch (beginRead(_connection)) {
-  case EventStatus::Finished:
-    log::trace("Client {}: Read ready; responding.", _clientId);
-    return finishRead();
-  case EventStatus::InProgress:
-    log::trace("Client {}: Scheduling async response.", _clientId);
-    return &ClientConnectionHandler::finishRead;
-  default:
-    log::error("Client {}: Read failed.", _clientId);
-    return nullptr;
+  switch (readToBuffer()) {
+    case EventStatus::Failed:
+      log::error("Client {}: Read failed.", _clientId);
+      return nullptr;
+    case EventStatus::Finished:
+      log::trace("Client {}: Read finished.", _clientId);
+      return respond();
+    case EventStatus::Ok:
+      log::trace("Client {}: Read in progress.", _clientId);
+      return &Self::respond;
+    default:
+      WSUDO_UNREACHABLE("Invalid EventStatus");
   }
-}
-
-ClientConnectionHandler::Callback
-ClientConnectionHandler::finishRead() {
-  switch (endReadWrite(_connection)) {
-  case EventStatus::Finished:
-    break;
-  case EventStatus::MoreData:
-    log::trace("Client {}: More data to read.", _clientId);
-    return &ClientConnectionHandler::read;
-  case EventStatus::InProgress:
-    log::trace("Client {}: Finished reading", _clientId);
-    return &ClientConnectionHandler::finishRead;
-  case EventStatus::Failed:
-    log::error("Client {}: Finalizing read failed.", _clientId);
-    return nullptr;
-  }
-  return respond();
 }
 
 ClientConnectionHandler::Callback
 ClientConnectionHandler::respond() {
-  Callback nextCb = &ClientConnectionHandler::finishRespond<false>;
-  if (_buffer.size() < 4) {
-    log::warn("Client {}: No message header found.", _clientId);
-  } else if (dispatchMessage()) {
-    nextCb = &ClientConnectionHandler::finishRespond<true>;
+  Callback nextCb = &Self::resetConnection;
+  if (dispatchMessage()) {
+    nextCb = &Self::read;
   }
 
-  switch (beginWrite(_connection)) {
-  case EventStatus::InProgress:
-    log::trace("Client {}: Write in progress.", _clientId);
-    break;
-  case EventStatus::Failed:
-    log::error("Client {}: Write failed.", _clientId);
-    return nullptr;
-  case EventStatus::Finished:
-  case EventStatus::MoreData:
-    // TODO: Continue writing when necessary.
-    log::trace("Client {}: Write finished.", _clientId);
-    return nextCb(this);
+  switch (writeFromBuffer()) {
+    case EventStatus::Ok:
+      log::trace("Client {}: Write in progress.", _clientId);
+      return nextCb;
+    case EventStatus::Failed:
+      log::error("Client {}: Write failed.", _clientId);
+      return nullptr;
+    case EventStatus::Finished:
+      log::trace("Client {}: Write finished.", _clientId);
+      return nextCb(*this);
+    default:
+      WSUDO_UNREACHABLE("Invalid EventStatus");
   }
 
   return nextCb;
 }
 
-template<bool Loop>
 ClientConnectionHandler::Callback
-ClientConnectionHandler::finishRespond() {
-  switch (endReadWrite(_connection)) {
-  case EventStatus::Finished:
-  case EventStatus::MoreData:
-    break;
-  default:
-    log::error("Client {}: Finalizing write failed.", _clientId);
+ClientConnectionHandler::resetConnection() {
+  if (!reset()) {
+    log::error("Client {}: Reset failed.", _clientId);
     return nullptr;
   }
-
-  if constexpr (Loop) {
-    return read();
-  } else {
-    return reset();
-  }
-}
-
-template
-ClientConnectionHandler::Callback
-ClientConnectionHandler::finishRespond<true>();
-
-template
-ClientConnectionHandler::Callback
-ClientConnectionHandler::finishRespond<false>();
-
-ClientConnectionHandler::Callback
-ClientConnectionHandler::reset() {
-  _userToken = nullptr;
-  log::trace("Client {}: Resetting connection.", _clientId);
-  HANDLE pipe = _connection;
-  _connection = nullptr;
-  return connect(pipe);
+  return &Self::beginConnect;
 }
 
 bool ClientConnectionHandler::dispatchMessage() {
+  if (_buffer.size() < 4) {
+    log::warn("Client {}: No message header found.", _clientId);
+    createResponse(msg::server::InvalidMessage, "No message header present");
+    return false;
+  }
+
   char header[5];
   std::memcpy(header, _buffer.data(), 4);
   header[4] = 0;
@@ -202,7 +198,8 @@ bool ClientConnectionHandler::dispatchMessage() {
       ++passwordEnd;
     }
     _buffer.emplace_back(0);
-    return tryToLogonUser(&*usernameBegin, &*passwordBegin);
+    return tryToLogonUser(reinterpret_cast<const char *>(&*usernameBegin),
+                          reinterpret_cast<const char *>(&*passwordBegin));
   } else if (!std::memcmp(header, msg::client::Bless, 4)) {
     if (_buffer.size() != 4 + sizeof(HANDLE)) {
       log::warn("Client {}: Invalid bless message.", _clientId);
@@ -239,16 +236,16 @@ bool ClientConnectionHandler::tryToLogonUser(const char *username,
 
   HObject clientProcess;
   ULONG processId;
-  if (!GetNamedPipeClientProcessId(_connection, &processId)) {
+  if (!GetNamedPipeClientProcessId(_pipe, &processId)) {
     log::error("Client {}: Couldn't get client process ID: {}", _clientId,
-               getLastErrorString());
+               lastErrorString());
     return false;
   }
   auto const access =
     PROCESS_DUP_HANDLE | PROCESS_VM_READ | PROCESS_QUERY_INFORMATION;
   if (!(clientProcess = OpenProcess(access, false, processId))) {
     log::error("Client {}: Couldn't open client process: {}", _clientId,
-               getLastErrorString());
+               lastErrorString());
     return false;
   }
 
@@ -258,7 +255,7 @@ bool ClientConnectionHandler::tryToLogonUser(const char *username,
                         &currentToken))
   {
     log::error("Client {}: Couldn't open client process token: {}", _clientId,
-               getLastErrorString());
+               lastErrorString());
     return false;
   }
 
@@ -276,7 +273,7 @@ bool ClientConnectionHandler::tryToLogonUser(const char *username,
                                  &secDesc)))
   {
     log::error("Client {}: Couldn't get security info: {}", _clientId,
-               getLastErrorString());
+               lastErrorString());
     return false;
   }
   WSUDO_SCOPEEXIT { LocalFree(secDesc); };
@@ -293,7 +290,7 @@ bool ClientConnectionHandler::tryToLogonUser(const char *username,
                         SecurityImpersonation, TokenPrimary, &newToken))
   {
     log::error("Client {}: Couldn't duplicate token: {}", _clientId,
-               getLastErrorString());
+               lastErrorString());
     return false;
   }
 
@@ -313,15 +310,15 @@ bool ClientConnectionHandler::bless(HANDLE remoteHandle) {
     return false;
   }
 
-  if (!GetNamedPipeClientProcessId(_connection, &processId)) {
+  if (!GetNamedPipeClientProcessId(_pipe, &processId)) {
     log::error("Client {}: Couldn't get client process ID: {}", _clientId,
-               getLastErrorString());
+               lastErrorString());
     return false;
   }
   auto const access = PROCESS_DUP_HANDLE | PROCESS_VM_READ;
   if (!(clientProcess = OpenProcess(access, false, processId))) {
     log::error("Client {}: Couldn't open client process: {}", _clientId,
-               getLastErrorString());
+               lastErrorString());
     return false;
   }
   log::trace("Trying to duplicate remote handle 0x{:X}",
@@ -330,7 +327,7 @@ bool ClientConnectionHandler::bless(HANDLE remoteHandle) {
                        &localHandle, PROCESS_SET_INFORMATION, false, 0))
   {
     log::error("Client {}: Couldn't duplicate remote handle: {}", _clientId,
-               getLastErrorString());
+               lastErrorString());
     return false;
   }
 
@@ -345,12 +342,12 @@ bool ClientConnectionHandler::bless(HANDLE remoteHandle) {
                                           sizeof(nt::PROCESS_ACCESS_TOKEN))))
   {
     log::error("Client {}: Couldn't assign access token: {}", _clientId,
-               getLastErrorString());
+               lastErrorString());
     return false;
   }
 
   log::trace("Client {}: Adjusted remote process token: {}", _clientId,
-             getLastErrorString());
+             lastErrorString());
 
   return true;
 }

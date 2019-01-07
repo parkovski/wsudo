@@ -18,7 +18,7 @@ endif()
 
 list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
 
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin/$<CONFIG>)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/$<CONFIG>")
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
 
 find_package(spdlog CONFIG REQUIRED)
@@ -40,6 +40,7 @@ list(TRANSFORM CLIENT_SRC PREPEND "client/")
 set(SERVICE_SRC
   clientconnection.cpp
   main.cpp
+  namedpipehandlefactory.cpp
   server.cpp
 )
 list(TRANSFORM SERVICE_SRC PREPEND "service/")
