@@ -36,7 +36,6 @@ EventStatus EventListener::next(DWORD timeout) {
     switch ((*_handlers[index])(*this)) {
     case EventStatus::Ok:
       log::trace("Event #{} returned Ok.", index);
-      ResetEvent(_events[index]);
       break;
     case EventStatus::Finished:
       log::trace("Event #{} returned Finished.", index);
@@ -46,7 +45,9 @@ EventStatus EventListener::next(DWORD timeout) {
       break;
     case EventStatus::Failed:
       log::error("Event #{} returned Failed.", index);
-      remove(index);
+      if (!_handlers[index]->reset()) {
+        remove(index);
+      }
       break;
     }
   } else if (waitResult >= WAIT_ABANDONED_0 &&

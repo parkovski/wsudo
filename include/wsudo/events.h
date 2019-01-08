@@ -50,14 +50,12 @@ public:
 };
 
 // Lambda wrapper event handler.
-template<typename F, bool AllowReset = false,
-         typename = std::enable_if_t<std::is_invocable_r_v<EventStatus, F,
-                                                           EventListener &>>>
+template<typename F, bool AllowReset = false>
 class EventCallback final : public EventHandler {
 public:
   EventCallback(F &&callback) noexcept
     : _callback{std::move(callback)},
-      _event{CreateEventW(nullptr, true, false, nullptr)}
+      _event{CreateEventW(nullptr, false, false, nullptr)}
   {}
 
   HANDLE event() const override { return _event; }
@@ -89,39 +87,50 @@ public:
   explicit EventOverlappedIO(bool isEventSet) noexcept;
   ~EventOverlappedIO();
 
+  // This class is not copyable or movable because the embedded
+  // OVERLAPPED must remain at the same memory address.
+
   EventOverlappedIO(const EventOverlappedIO &) = delete;
   EventOverlappedIO &operator=(const EventOverlappedIO &) = delete;
 
-  EventOverlappedIO(EventOverlappedIO &&) = default;
-  EventOverlappedIO &operator=(EventOverlappedIO &&) = default;
+  EventOverlappedIO(EventOverlappedIO &&) = delete;
+  EventOverlappedIO &operator=(EventOverlappedIO &&) = delete;
 
+  // Returns false. Subclasses can override this to reset their own state and
+  // return true.
   bool reset() override;
 
+  // Returns the overlapped trigger event.
   HANDLE event() const override { return _overlapped.hEvent; }
 
   // Subclasses should call this first to handle chunked reading/writing.
   EventStatus operator()(EventListener &) override;
 
 protected:
-  OVERLAPPED _overlapped;
-  std::vector<uint8_t> _buffer;
+  OVERLAPPED _overlapped{};
+  std::vector<uint8_t> _buffer{};
 
   // Overrides should return an overlapped readable/writable handle here.
   virtual HANDLE fileHandle() const = 0;
 
+  // Begin reading from the file handle. Subclasses must call operator() for
+  // this to work.
   EventStatus readToBuffer() { _offset = 0; return beginRead(); }
+
+  // Begin writing to the file handle. Subclasses must call operator() for
+  // this to work.
   EventStatus writeFromBuffer() { _offset = 0; return beginWrite(); }
 
 private:
   // Position in buffer to begin reading or writing, depending on IO state.
-  size_t _offset;
+  size_t _offset{0};
 
   enum class IOState {
     Inactive,
     Reading,
     Writing,
     Failed,
-  } _ioState;
+  } _ioState{IOState::Inactive};
 
   const size_t BufferDoublingLimit = 4;
 
@@ -145,44 +154,31 @@ public:
   EventListener(EventListener &&) = default;
   EventListener &operator=(EventListener &&) = default;
 
-  // Move a unique_ptr into the event listener.
-  template<typename H>
-  std::enable_if_t<
-    std::is_convertible_v<H &, EventHandler &>,
-    H &
-  >
-  emplace_back(std::unique_ptr<H> &&handler) {
-    _events.emplace_back(handler->event());
-    return static_cast<H &>(*_handlers.emplace_back(std::move(handler)));
-  }
-
-  // Move a raw handler into the event listener.
-  template<typename H>
-  std::enable_if_t<
-    std::conjunction_v<
-      std::is_convertible<H &, EventHandler &>,
-      std::is_move_constructible<H>
-    >,
-    H &
-  >
-  emplace_back(H &&handler) {
-    return emplace_back(std::make_unique<H>(std::forward<H>(handler)));
-  }
-
   // Construct a handler in place.
-  template<typename H, typename Arg1, typename... Args>
+  template<typename H, typename... Args>
   std::enable_if_t<
     std::conjunction_v<
       std::is_convertible<H &, EventHandler &>,
-      std::is_constructible<H, Arg1, Args...>
+      std::is_constructible<H, Args...>
     >,
     H &
   >
-  emplace_back(Arg1 &&arg1, Args &&...args) {
-    return emplace_back(std::make_unique<H>(
-      std::forward<Arg1>(arg1),
-      std::forward<Args>(args)...
-    ));
+  emplace(Args &&...args) {
+    auto &handler = static_cast<H &>(
+      *_handlers.emplace_back(std::make_unique<H>(std::forward<Args>(args)...))
+    );
+    _events.emplace_back(handler.event());
+    return handler;
+  }
+
+  // Add a lambda event handler.
+  template<bool AllowReset = false, typename F>
+  std::enable_if_t<
+    std::is_invocable_r_v<EventStatus, F, EventListener &>,
+    EventCallback<F, AllowReset> &
+  >
+  emplace(F &&callback) {
+    return emplace<EventCallback<F, AllowReset>>(std::move(callback));
   }
 
   // Run one iteration of the event loop.

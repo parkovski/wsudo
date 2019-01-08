@@ -17,14 +17,14 @@ void wsudo::server::serverMain(Config &config) {
   }
 
   EventListener listener;
-  *config.quitEvent = listener.emplace_back(EventCallback {
+  *config.quitEvent = listener.emplace(
     [](EventListener &listener) {
       listener.stop();
       return EventStatus::Finished;
     }
-  }).event();
+  ).event();
 
-  //listener.emplace_back(ClientConnectionHandler{pipeHandleFactory(), 1});
+  listener.emplace<ClientConnectionHandler>(pipeHandleFactory(), 1);
 
   EventStatus status;
   do {

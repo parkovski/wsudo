@@ -41,7 +41,7 @@ EventStatus ClientConnectionHandler::operator()(EventListener &listener) {
   }
 
   // No IO, so move on to the next step.
-  if (!_callback || !(_callback = _callback(*this))) {
+  if (!_callback || !_callback.call_and_swap(*this)) {
     return EventStatus::Failed;
   }
   return EventStatus::Ok;
@@ -85,10 +85,11 @@ ClientConnectionHandler::beginConnect() {
 ClientConnectionHandler::Callback
 ClientConnectionHandler::endConnect() {
   DWORD dummyBytesTransferred;
-  if (GetOverlappedResult(_pipe, &_overlapped,
-                          &dummyBytesTransferred, false) != ERROR_SUCCESS)
+  if (!GetOverlappedResult(_pipe, &_overlapped,
+                           &dummyBytesTransferred, false))
   {
-    log::error("Client {}: error finalizing connection.", _clientId);
+    log::error("Client {}: error finalizing connection: {}", _clientId,
+               lastErrorString());
     return nullptr;
   }
   return read();
@@ -154,7 +155,7 @@ bool ClientConnectionHandler::dispatchMessage() {
   char header[5];
   std::memcpy(header, _buffer.data(), 4);
   header[4] = 0;
-  log::trace("Client {}: Dispatching message {}.", _clientId, header);
+  log::trace("Client {}: Dispatching message '{}'.", _clientId, header);
 
   // Check if the header is still the same on exit; that means we forgot
   // to set it.
@@ -216,7 +217,8 @@ bool ClientConnectionHandler::dispatchMessage() {
     }
     return false;
   } else {
-    log::warn("Client {}: Unknown message header {}.", _clientId, header);
+    log::warn("Client {}: Unknown message header (0x{:2X}_{:2X}_{:2X}_{:2X}).",
+              _clientId, header[0], header[1], header[2], header[3]);
     createResponse(msg::server::InvalidMessage, "Unknown message header");
     return false;
   }

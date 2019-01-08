@@ -142,7 +142,7 @@ struct recursive_mem_callback {
 
   // Call the function, replacing it with the returned callback.
   constexpr inline bool call_and_swap(T &self, Args &&...args) {
-    function = self.*function(std::forward<Args>(args)...);
+    function = (self.*function)(std::forward<Args>(args)...).function;
     return !!function;
   }
 

@@ -8,26 +8,16 @@ using namespace wsudo::events;
 // Helpers {{{
 
 inline void setOverlappedOffset(LPOVERLAPPED overlapped, size_t offset) {
-  overlapped->Offset = static_cast<DWORD>(offset);
-  if constexpr (sizeof(size_t) == 4) {
-    overlapped->OffsetHigh = 0;
-  } else if (sizeof(size_t) == 8) {
-    overlapped->OffsetHigh = static_cast<DWORD>(offset >> 4);
-  }
-
-  // Supposed to zero unused members before use.
+  overlapped->Pointer = reinterpret_cast<PVOID>(offset);
+  // MSDN: Zero unused members before use.
   overlapped->Internal = 0;
   overlapped->InternalHigh = 0;
 }
 
 // }}}
 
-EventOverlappedIO::EventOverlappedIO(bool isEventSet) noexcept
-  : _overlapped{},
-    _offset{0},
-    _ioState{IOState::Inactive}
-{
-  _overlapped.hEvent = CreateEventW(nullptr, true, isEventSet, nullptr);
+EventOverlappedIO::EventOverlappedIO(bool isEventSet) noexcept {
+  _overlapped.hEvent = CreateEventW(nullptr, false, isEventSet, nullptr);
 }
 
 EventOverlappedIO::~EventOverlappedIO() {
@@ -37,7 +27,7 @@ EventOverlappedIO::~EventOverlappedIO() {
 EventStatus EventOverlappedIO::beginRead() {
   _ioState = IOState::Reading;
   setOverlappedOffset(&_overlapped, _offset);
-  _buffer.reserve(_offset + ChunkSize);
+  _buffer.resize(_offset + ChunkSize);
 
   if (ReadFile(fileHandle(), _buffer.data() + _offset, ChunkSize,
                nullptr, &_overlapped))
@@ -124,7 +114,6 @@ EventStatus EventOverlappedIO::endWrite() {
 }
 
 bool EventOverlappedIO::reset() {
-  // TODO: These should be able to be reused by the ClientListener.
   return false;
 }
 
