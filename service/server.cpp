@@ -24,7 +24,9 @@ void wsudo::server::serverMain(Config &config) {
     }
   ).event();
 
-  listener.emplace<ClientConnectionHandler>(pipeHandleFactory(), 1);
+  for (int id = 1; id <= MaxPipeConnections; ++id) {
+    listener.emplace<ClientConnectionHandler>(pipeHandleFactory(), id);
+  }
 
   EventStatus status = listener.run();
 

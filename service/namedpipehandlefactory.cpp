@@ -52,16 +52,17 @@ HObject NamedPipeHandleFactory::operator()() {
     return HObject{};
   }
 
-  return HObject{CreateNamedPipeW(_pipeName,
-                                  PIPE_ACCESS_DUPLEX |
-                                    FILE_FLAG_FIRST_PIPE_INSTANCE |
-                                    FILE_FLAG_OVERLAPPED,
+  DWORD openMode = PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED;
+  if (_firstInstance) {
+    openMode |= FILE_FLAG_FIRST_PIPE_INSTANCE;
+    _firstInstance = false;
+  }
+
+  return HObject{CreateNamedPipeW(_pipeName, openMode,
                                   PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE |
                                     PIPE_REJECT_REMOTE_CLIENTS,
-                                  MaxPipeConnections,
-                                  PipeBufferSize,
-                                  PipeBufferSize,
-                                  PipeDefaultTimeout,
+                                  MaxPipeConnections, PipeBufferSize,
+                                  PipeBufferSize, PipeDefaultTimeout,
                                   &_securityAttributes)};
 }
 
