@@ -30,32 +30,38 @@ set(COMMON_SRC
   overlapped.cpp
   winsupport.cpp
 )
-list(TRANSFORM COMMON_SRC PREPEND "common/")
+list(TRANSFORM COMMON_SRC PREPEND "lib/common/")
 
 set(CLIENT_SRC
   main.cpp
 )
-list(TRANSFORM CLIENT_SRC PREPEND "client/")
+list(TRANSFORM CLIENT_SRC PREPEND "lib/client/")
 
-set(SERVICE_SRC
+set(SERVER_SRC
   clientconnection.cpp
   main.cpp
   namedpipehandlefactory.cpp
   server.cpp
 )
-list(TRANSFORM SERVICE_SRC PREPEND "service/")
+list(TRANSFORM SERVER_SRC PREPEND "lib/server/")
 
 add_library(wsudo_common STATIC ${COMMON_SRC})
-add_executable(wsudo ${CLIENT_SRC})
-add_executable(TokenServer ${SERVICE_SRC})
+add_library(wsudo_client STATIC ${CLIENT_SRC})
+add_library(wsudo_server STATIC ${SERVER_SRC})
+
+add_executable(wsudo lib/client/main.cpp)
+add_executable(TokenServer lib/server/main.cpp)
 
 include_directories(${PROJECT_SOURCE_DIR}/include)
 
 set(WSUDO_LIBRARIES spdlog::spdlog fmt::fmt-header-only)
 
 target_link_libraries(wsudo_common ${WSUDO_LIBRARIES})
-target_link_libraries(wsudo wsudo_common)
-target_link_libraries(TokenServer wsudo_common)
+target_link_libraries(wsudo_client ${WSUDO_LIBRARIES})
+target_link_libraries(wsudo_server ${WSUDO_LIBRARIES})
+
+target_link_libraries(wsudo wsudo_client wsudo_common)
+target_link_libraries(TokenServer wsudo_server wsudo_common)
 
 if(WSUDO_BUILD_TESTS)
   add_subdirectory(test)
