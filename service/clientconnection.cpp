@@ -20,10 +20,12 @@ bool ClientConnectionHandler::reset() {
   EventOverlappedIO::reset();
 
   _userToken = nullptr;
-  if (_pipe && !DisconnectNamedPipe(_pipe)) {
+  if (!DisconnectNamedPipe(_pipe) &&
+      GetLastError() != ERROR_PIPE_NOT_CONNECTED)
+  {
     return false;
   }
-  log::trace("Client {}: Resetting connection.", _clientId);
+  log::debug("Client {}: Resetting connection.", _clientId);
   _callback = &Self::beginConnect;
   SetEvent(_overlapped.hEvent);
   return true;
@@ -65,18 +67,19 @@ void ClientConnectionHandler::createResponse(const char *header,
 ClientConnectionHandler::Callback
 ClientConnectionHandler::beginConnect() {
   if (ConnectNamedPipe(_pipe, &_overlapped)) {
+    log::trace("Client {}: connected.", _clientId);
     return read();
   }
 
   switch (GetLastError()) {
   case ERROR_IO_PENDING:
-    log::trace("Client {}: scheduling client connection callback.", _clientId);
+    log::trace("Client {}: waiting for connection.", _clientId);
     return &Self::endConnect;
   case ERROR_PIPE_CONNECTED:
     log::trace("Client {}: already connected; reading.", _clientId);
     return endConnect();
   default:
-    log::error("Client {}: ConnectNamedPipe failed: {}", _clientId,
+    log::error("Client {}: ConnectNamedPipe failed: {}.", _clientId,
                lastErrorString());
     return nullptr;
   }
@@ -88,7 +91,11 @@ ClientConnectionHandler::endConnect() {
   if (!GetOverlappedResult(_pipe, &_overlapped,
                            &dummyBytesTransferred, false))
   {
-    log::error("Client {}: error finalizing connection: {}", _clientId,
+    if (GetLastError() == ERROR_BROKEN_PIPE) {
+      log::info("Client {}: connection ended by client.", _clientId);
+      return nullptr;
+    }
+    log::error("Client {}: error finalizing connection: {}.", _clientId,
                lastErrorString());
     return nullptr;
   }
@@ -99,13 +106,10 @@ ClientConnectionHandler::Callback
 ClientConnectionHandler::read() {
   switch (readToBuffer()) {
     case EventStatus::Failed:
-      log::error("Client {}: Read failed.", _clientId);
       return nullptr;
     case EventStatus::Finished:
-      log::trace("Client {}: Read finished.", _clientId);
       return respond();
     case EventStatus::Ok:
-      log::trace("Client {}: Read in progress.", _clientId);
       return &Self::respond;
     default:
       WSUDO_UNREACHABLE("Invalid EventStatus");
@@ -121,13 +125,10 @@ ClientConnectionHandler::respond() {
 
   switch (writeFromBuffer()) {
     case EventStatus::Ok:
-      log::trace("Client {}: Write in progress.", _clientId);
       return nextCb;
     case EventStatus::Failed:
-      log::error("Client {}: Write failed.", _clientId);
       return nullptr;
     case EventStatus::Finished:
-      log::trace("Client {}: Write finished.", _clientId);
       return nextCb(*this);
     default:
       WSUDO_UNREACHABLE("Invalid EventStatus");
@@ -155,7 +156,7 @@ bool ClientConnectionHandler::dispatchMessage() {
   char header[5];
   std::memcpy(header, _buffer.data(), 4);
   header[4] = 0;
-  log::trace("Client {}: Dispatching message '{}'.", _clientId, header);
+  log::debug("Client {}: Dispatching message '{}'.", _clientId, header);
 
   // Check if the header is still the same on exit; that means we forgot
   // to set it.
@@ -229,7 +230,7 @@ bool ClientConnectionHandler::tryToLogonUser(const char *username,
 {
   // FIXME: Yeah...
   if (std::memcmp(password, "password", 9)) {
-    log::trace("Client {}: Access denied - invalid password.", _clientId);
+    log::warn("Client {}: Access denied - invalid password.", _clientId);
     createResponse(msg::server::AccessDenied);
     return false;
   }
@@ -297,7 +298,7 @@ bool ClientConnectionHandler::tryToLogonUser(const char *username,
   }
 
   _userToken = std::move(newToken);
-  log::trace("Client {}: Stored new token.", _clientId);
+  log::info("Client {}: Authorized; stored new token.", _clientId);
 
   createResponse(msg::server::Success);
   return true;
@@ -323,7 +324,7 @@ bool ClientConnectionHandler::bless(HANDLE remoteHandle) {
                lastErrorString());
     return false;
   }
-  log::trace("Trying to duplicate remote handle 0x{:X}",
+  log::debug("Trying to duplicate remote handle 0x{:X}",
              reinterpret_cast<size_t>(remoteHandle));
   if (!DuplicateHandle(clientProcess, remoteHandle, GetCurrentProcess(),
                        &localHandle, PROCESS_SET_INFORMATION, false, 0))
@@ -348,8 +349,8 @@ bool ClientConnectionHandler::bless(HANDLE remoteHandle) {
     return false;
   }
 
-  log::trace("Client {}: Adjusted remote process token: {}", _clientId,
-             lastErrorString());
+  log::info("Client {}: Successfully adjusted remote process token.",
+            _clientId);
 
   return true;
 }

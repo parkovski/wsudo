@@ -38,14 +38,18 @@ EventStatus EventListener::next(DWORD timeout) {
       log::trace("Event #{} returned Ok.", index);
       break;
     case EventStatus::Finished:
-      log::trace("Event #{} returned Finished.", index);
-      if (!_handlers[index]->reset()) {
+      if (_handlers[index]->reset()) {
+        log::trace("Event #{} returned Finished and was reset.", index);
+      } else {
+        log::debug("Event #{} returned Finished and will be removed.", index);
         remove(index);
       }
       break;
     case EventStatus::Failed:
-      log::error("Event #{} returned Failed.", index);
-      if (!_handlers[index]->reset()) {
+      if (_handlers[index]->reset()) {
+        log::warn("Event #{} returned Failed, but reset succeeded.", index);
+      } else {
+        log::error("Event #{} returned Failed.", index);
         remove(index);
       }
       break;

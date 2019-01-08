@@ -52,6 +52,7 @@ public:
   explicit operator bool() const;
 
 private:
+  bool _firstInstance = true;
   LPCWSTR _pipeName;
   SID_IDENTIFIER_AUTHORITY _sidAuth;
   Handle<PSID, FreeSid> _sid;

@@ -37,11 +37,11 @@ EventStatus EventOverlappedIO::beginRead() {
   }
   auto error = GetLastError();
   if (error == ERROR_IO_PENDING || error == ERROR_MORE_DATA) {
-    log::trace("Read in progress");
+    log::debug("Read in progress.");
     return EventStatus::Ok;
   } else {
     log::error("ReadFile failed: {}", lastErrorString(error));
-    _ioState = IOState::Failed;
+    _ioState = IOState::Inactive;
     return EventStatus::Failed;
   }
 }
@@ -51,7 +51,7 @@ EventStatus EventOverlappedIO::endRead() {
   if (GetOverlappedResult(fileHandle(), &_overlapped, &bytesTransferred, false))
   {
     _offset += bytesTransferred;
-    log::trace("Read finished: {} bytes", _offset);
+    log::debug("Read finished: {} bytes.", _offset);
     _buffer.resize(_offset);
     _ioState = IOState::Inactive;
     return EventStatus::Finished;
@@ -61,8 +61,12 @@ EventStatus EventOverlappedIO::endRead() {
     return EventStatus::Ok;
   } else if (error == ERROR_MORE_DATA) {
     return beginRead();
+  } else if (error == ERROR_BROKEN_PIPE) {
+    log::info("Connection ended by client.");
+    _ioState = IOState::Failed;
+    return EventStatus::Failed;
   }
-  log::error("Read failed: {}", lastErrorString(error));
+  log::error("Read failed: {}.", lastErrorString(error));
   _ioState = IOState::Failed;
   return EventStatus::Failed;
 }
@@ -77,10 +81,10 @@ EventStatus EventOverlappedIO::beginWrite() {
     // Interpret the results.
     return endWrite();
   } else if (GetLastError() == ERROR_IO_PENDING) {
-    log::trace("Write in progress");
+    log::trace("Write in progress.");
     return EventStatus::Ok;
   } else {
-    log::error("WriteFile failed: {}", lastErrorString());
+    log::error("WriteFile failed: {}.", lastErrorString());
     _ioState = IOState::Failed;
     return EventStatus::Failed;
   }
@@ -92,7 +96,7 @@ EventStatus EventOverlappedIO::endWrite() {
   {
     _offset += bytesTransferred;
     if (_offset == _buffer.size()) {
-      log::trace("Write finished: {} bytes", _offset);
+      log::debug("Write finished: {} bytes.", _offset);
       _ioState = IOState::Inactive;
       return EventStatus::Finished;
     } else if (_offset > _buffer.size()) {
@@ -101,19 +105,25 @@ EventStatus EventOverlappedIO::endWrite() {
       _ioState = IOState::Inactive;
       return EventStatus::Finished;
     } else {
-      log::trace("Write in progress: {}%", _offset / _buffer.size());
+      log::debug("Write in progress: {}%", _offset / _buffer.size());
       return beginWrite();
     }
   }
-  if (GetLastError() == ERROR_IO_PENDING) {
+  auto error = GetLastError();
+  if (error == ERROR_IO_PENDING) {
     return EventStatus::Ok;
+  } else if (error == ERROR_BROKEN_PIPE) {
+    log::info("Connection ended by client.");
+    _ioState = IOState::Failed;
+    return EventStatus::Failed;
   }
-  log::error("Write failed: {}", lastErrorString());
+  log::error("Write failed: {}", lastErrorString(error));
   _ioState = IOState::Failed;
   return EventStatus::Failed;
 }
 
 bool EventOverlappedIO::reset() {
+  _ioState = IOState::Inactive;
   return false;
 }
 
