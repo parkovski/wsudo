@@ -33,8 +33,18 @@ bool setThreadName(const wchar_t *name) {
 std::string lastErrorString(DWORD status) {
   constexpr DWORD bufferSize = 1024;
   char buffer[bufferSize];
-  auto size = FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM, nullptr, status, 0,
-                             buffer, bufferSize, nullptr);
+  // MSDN: Need to specify IGNORE_INSERTS with FROM_SYSTEM to avoid potential
+  // bad memory access.
+  auto size = FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM |
+                               FORMAT_MESSAGE_IGNORE_INSERTS,
+                             nullptr, status, 0, buffer, bufferSize, nullptr);
+  // Get rid of the final new line.
+  if (size && buffer[size - 1] == '\n') {
+    --size;
+    if (size && buffer[size - 1] == '\r') {
+      --size;
+    }
+  }
   return std::string{buffer, buffer + size};
 }
 
