@@ -95,6 +95,6 @@ int wmain(int argc, wchar_t *argv[]) {
   server::Config config{ PipeFullPath, &gs_quitEventHandle };
   std::thread serverThread{&server::serverMain, std::ref(config)};
   serverThread.join();
-  log::info("Event loop returned {}", server::statusToString(config.status));
+  log::info("Event loop returned {}.", server::statusToString(config.status));
   return 0;
 }

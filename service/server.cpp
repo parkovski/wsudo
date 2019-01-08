@@ -26,10 +26,7 @@ void wsudo::server::serverMain(Config &config) {
 
   listener.emplace<ClientConnectionHandler>(pipeHandleFactory(), 1);
 
-  EventStatus status;
-  do {
-    status = listener.run();
-  } while (status == EventStatus::Ok);
+  EventStatus status = listener.run();
 
   if (status == EventStatus::Failed) {
     config.status = StatusEventFailed;

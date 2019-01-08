@@ -68,20 +68,18 @@ EventStatus EventListener::next(DWORD timeout) {
     return EventStatus::Failed;
   }
 
-  return EventStatus::Ok;
+  return _running ? EventStatus::Ok : EventStatus::Finished;
 }
 
 EventStatus EventListener::run(DWORD timeout) {
   _running = true;
 
-  do {
+  while (true) {
     auto status = next(timeout);
     if (status != EventStatus::Ok) {
       return status;
     }
-  } while (isRunning());
-
-  return EventStatus::Ok;
+  }
 }
 
 void EventListener::remove(size_t index) {

@@ -184,8 +184,7 @@ public:
   // Run one iteration of the event loop.
   EventStatus next(DWORD timeout = INFINITE);
 
-  // Run the event loop until a quit is triggered. Returns Ok when the loop
-  // was suspended but no failure or finish was triggered.
+  // Run the event loop until a quit is triggered. Returns Finished or Failed.
   EventStatus run(DWORD timeout = INFINITE);
 
   bool isRunning() const { return _running; }
