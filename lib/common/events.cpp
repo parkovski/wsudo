@@ -63,11 +63,11 @@ EventStatus EventListener::next(DWORD timeout) {
     remove(index);
     return EventStatus::Failed;
   } else if (waitResult == WAIT_FAILED) {
-    log::critical("WaitForMultipleObjects failed: {}.",
+    log::critical("WaitForMultipleObjects failed: {}",
                   lastErrorString());
     return EventStatus::Failed;
   } else {
-    log::critical("WaitForMultipleObjects returned 0x{:X}: {}.", waitResult,
+    log::critical("WaitForMultipleObjects returned 0x{:X}: {}", waitResult,
                   lastErrorString());
     return EventStatus::Failed;
   }

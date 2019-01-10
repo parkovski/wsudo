@@ -42,8 +42,23 @@ private:
 };
 
 class Session {
+  friend class SessionManager;
+
+  // Password is a move reference in the hopes that we will get the only copy
+  // and erase it after we're done with it.
+  Session(const SessionManager &manager, std::wstring_view username,
+          std::wstring_view domain, std::wstring &&password,
+          unsigned ttlSeconds) noexcept;
+
+  Session(const SessionManager &manager, std::wstring_view username,
+          std::wstring_view domain, std::wstring &&password) noexcept;
+
 public:
-  ~Session();
+  Session(const Session &) = delete;
+  Session &operator=(const Session &) = delete;
+
+  Session(Session &&) = default;
+  Session &operator=(Session &&) = default;
 
   std::wstring_view username() const {
     return _username;
@@ -66,22 +81,6 @@ public:
   }
 
 private:
-  friend class SessionManager;
-
-  // Password is a move reference in the hopes that we will get the only copy
-  // and erase it after we're done with it.
-  Session(const SessionManager &manager, std::wstring_view username,
-          std::wstring_view domain, std::wstring &&password,
-          unsigned ttlSeconds) noexcept;
-
-  Session(const SessionManager &manager, std::wstring_view username,
-          std::wstring_view domain, std::wstring &&password) noexcept;
-
-  Session(const Session &) = delete;
-  Session &operator=(const Session &) = delete;
-  Session(Session &&) = default;
-  Session &operator=(Session &&) = default;
-
   const std::wstring _username;
   const std::wstring _domain;
   HObject _token;

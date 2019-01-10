@@ -209,6 +209,10 @@ int wmain(int argc, wchar_t *argv[]) {
     return ClientExitSystemError;
   }
 
+  if (auto slash = username.find(L'\\'); slash != std::wstring::npos) {
+    username = username.substr(slash + 1);
+  }
+
   std::wstring password{};
   std::wcout << L"[wsudo] password for " << username << ": ";
   std::wcout.flush();

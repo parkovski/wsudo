@@ -1,4 +1,3 @@
-#include "wsudo/events.h"
 #include "wsudo/server.h"
 
 using namespace wsudo;
@@ -39,7 +38,7 @@ EventStatus EventOverlappedIO::beginRead() {
     log::debug("Read in progress.");
     return EventStatus::Ok;
   } else {
-    log::error("ReadFile failed: {}.", lastErrorString(error));
+    log::error("ReadFile failed: {}", lastErrorString(error));
     _ioState = IOState::Inactive;
     return EventStatus::Failed;
   }
@@ -65,7 +64,7 @@ EventStatus EventOverlappedIO::endRead() {
     _ioState = IOState::Failed;
     return EventStatus::Failed;
   }
-  log::error("Read failed: {}.", lastErrorString(error));
+  log::error("Read failed: {}", lastErrorString(error));
   _ioState = IOState::Failed;
   return EventStatus::Failed;
 }
@@ -83,7 +82,7 @@ EventStatus EventOverlappedIO::beginWrite() {
     log::trace("Write in progress.");
     return EventStatus::Ok;
   } else {
-    log::error("WriteFile failed: {}.", lastErrorString());
+    log::error("WriteFile failed: {}", lastErrorString());
     _ioState = IOState::Failed;
     return EventStatus::Failed;
   }
@@ -116,7 +115,7 @@ EventStatus EventOverlappedIO::endWrite() {
     _ioState = IOState::Failed;
     return EventStatus::Failed;
   }
-  log::error("Write failed: {}.", lastErrorString(error));
+  log::error("Write failed: {}", lastErrorString(error));
   _ioState = IOState::Failed;
   return EventStatus::Failed;
 }

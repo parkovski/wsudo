@@ -3,6 +3,7 @@
 
 #include "wsudo.h"
 #include "events.h"
+#include "session.h"
 
 #include <memory>
 #include <type_traits>
@@ -59,7 +60,9 @@ public:
   using Self = ClientConnectionHandler;
   using Callback = recursive_mem_callback<Self>;
 
-  explicit ClientConnectionHandler(HObject pipe, int clientId) noexcept;
+  explicit ClientConnectionHandler(HObject pipe, int clientId,
+                                   session::SessionManager &sessionManager)
+                                   noexcept;
 
   bool reset() override;
 
@@ -73,6 +76,7 @@ protected:
 private:
   HObject _pipe;
   int _clientId;
+  session::SessionManager &_sessionManager;
   Callback _callback;
   HObject _userToken{};
 

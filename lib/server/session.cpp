@@ -1,6 +1,7 @@
 #define WSUDO_NO_NT_API
 #include "wsudo/session.h"
 #include <NTSecAPI.h>
+#include <cstdlib>
 
 #define NT_SUCCESS(status) ((long)(status) >= 0)
 
@@ -18,7 +19,7 @@ SessionManager::SessionManager(unsigned defaultTtlSeconds) noexcept
   status = LsaOpenPolicy(nullptr, &attr, POLICY_VIEW_LOCAL_INFORMATION,
                          &policy);
   if (!NT_SUCCESS(status)) {
-    log::error("LsaOpenPolicy failed: {}.",
+    log::error("LsaOpenPolicy failed: {}",
                lastErrorString(LsaNtStatusToWinError(status)));
     return;
   }
@@ -27,7 +28,7 @@ SessionManager::SessionManager(unsigned defaultTtlSeconds) noexcept
   status = LsaQueryInformationPolicy(policy, PolicyAccountDomainInformation,
                                      reinterpret_cast<void **>(&accountDomain));
   if (!NT_SUCCESS(status)) {
-    log::error("LsaQueryInformationPolicy failed: {}.",
+    log::error("LsaQueryInformationPolicy failed: {}",
                 lastErrorString(LsaNtStatusToWinError(status)));
     return;
   }
@@ -40,11 +41,33 @@ SessionManager::SessionManager(unsigned defaultTtlSeconds) noexcept
             to_utf8(_localDomain));
 }
 
+std::shared_ptr<Session> SessionManager::find(std::wstring_view username,
+                                              std::wstring_view domain)
+{
+  // TODO: Use full user@domain format.
+  (void)domain;
+  auto it = _sessions.find(username);
+  if (it == _sessions.end()) {
+    return std::shared_ptr<Session>{};
+  }
+  return it->second;
+}
+
 std::shared_ptr<Session> SessionManager::store(Session &&session) {
   //std::wstring_view domain{session.domain()};
   std::wstring_view name{session.username()};
+  if (!session) {
+    log::info("Failed login attempt for {}.", to_utf8(name));
+    return std::shared_ptr<Session>{};
+  }
   log::debug("Session username: {}.", to_utf8(name));
-  return std::shared_ptr<Session>{};
+  auto [it, inserted] = _sessions.try_emplace(
+    name, std::make_shared<Session>(std::move(session))
+  );
+  if (!inserted) {
+    log::warn("Session already exists for '{}'.", to_utf8(name));
+  }
+  return it->second;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -67,7 +90,7 @@ Session::Session(const SessionManager &, std::wstring_view username,
                     &_token, &_pSid, &pProfileBuffer, &profileLength,
                     &quotaLimits))
   {
-    log::error("LogonUserExW failed: {}.", lastErrorString());
+    log::debug("LogonUserExW failed: {}", lastErrorString());
   }
 
   // TODO: Set expiration time.
