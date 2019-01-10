@@ -1,5 +1,4 @@
 #include "wsudo/server.h"
-#include "wsudo/ntapi.h"
 
 #include <AclAPI.h>
 
@@ -240,14 +239,14 @@ bool ClientConnectionHandler::tryToLogonUser(const char *username,
   HObject clientProcess;
   ULONG processId;
   if (!GetNamedPipeClientProcessId(_pipe, &processId)) {
-    log::error("Client {}: Couldn't get client process ID: {}", _clientId,
+    log::error("Client {}: Couldn't get client process ID: {}.", _clientId,
                lastErrorString());
     return false;
   }
   auto const access =
     PROCESS_DUP_HANDLE | PROCESS_VM_READ | PROCESS_QUERY_INFORMATION;
   if (!(clientProcess = OpenProcess(access, false, processId))) {
-    log::error("Client {}: Couldn't open client process: {}", _clientId,
+    log::error("Client {}: Couldn't open client process: {}.", _clientId,
                lastErrorString());
     return false;
   }
@@ -257,7 +256,7 @@ bool ClientConnectionHandler::tryToLogonUser(const char *username,
   if (!OpenProcessToken(GetCurrentProcess(), TOKEN_DUPLICATE | TOKEN_READ,
                         &currentToken))
   {
-    log::error("Client {}: Couldn't open client process token: {}", _clientId,
+    log::error("Client {}: Couldn't open client process token: {}.", _clientId,
                lastErrorString());
     return false;
   }
@@ -275,7 +274,7 @@ bool ClientConnectionHandler::tryToLogonUser(const char *username,
                                  &ownerSid, &groupSid, &dacl, &sacl,
                                  &secDesc)))
   {
-    log::error("Client {}: Couldn't get security info: {}", _clientId,
+    log::error("Client {}: Couldn't get security info: {}.", _clientId,
                lastErrorString());
     return false;
   }
@@ -292,7 +291,7 @@ bool ClientConnectionHandler::tryToLogonUser(const char *username,
   if (!DuplicateTokenEx(currentToken, MAXIMUM_ALLOWED, &secAttr,
                         SecurityImpersonation, TokenPrimary, &newToken))
   {
-    log::error("Client {}: Couldn't duplicate token: {}", _clientId,
+    log::error("Client {}: Couldn't duplicate token: {}.", _clientId,
                lastErrorString());
     return false;
   }
@@ -314,22 +313,22 @@ bool ClientConnectionHandler::bless(HANDLE remoteHandle) {
   }
 
   if (!GetNamedPipeClientProcessId(_pipe, &processId)) {
-    log::error("Client {}: Couldn't get client process ID: {}", _clientId,
+    log::error("Client {}: Couldn't get client process ID: {}.", _clientId,
                lastErrorString());
     return false;
   }
   auto const access = PROCESS_DUP_HANDLE | PROCESS_VM_READ;
   if (!(clientProcess = OpenProcess(access, false, processId))) {
-    log::error("Client {}: Couldn't open client process: {}", _clientId,
+    log::error("Client {}: Couldn't open client process: {}.", _clientId,
                lastErrorString());
     return false;
   }
-  log::debug("Trying to duplicate remote handle 0x{:X}",
+  log::debug("Trying to duplicate remote handle 0x{:X}.",
              reinterpret_cast<size_t>(remoteHandle));
   if (!DuplicateHandle(clientProcess, remoteHandle, GetCurrentProcess(),
                        &localHandle, PROCESS_SET_INFORMATION, false, 0))
   {
-    log::error("Client {}: Couldn't duplicate remote handle: {}", _clientId,
+    log::error("Client {}: Couldn't duplicate remote handle: {}.", _clientId,
                lastErrorString());
     return false;
   }
@@ -344,7 +343,7 @@ bool ClientConnectionHandler::bless(HANDLE remoteHandle) {
                                           &processAccessToken,
                                           sizeof(nt::PROCESS_ACCESS_TOKEN))))
   {
-    log::error("Client {}: Couldn't assign access token: {}", _clientId,
+    log::error("Client {}: Couldn't assign access token: {}.", _clientId,
                lastErrorString());
     return false;
   }

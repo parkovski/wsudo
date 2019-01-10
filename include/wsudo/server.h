@@ -2,7 +2,6 @@
 #define WSUDO_SERVER_H
 
 #include "wsudo.h"
-#include "winsupport.h"
 #include "events.h"
 
 #include <memory>
@@ -12,13 +11,6 @@
 #include <AclAPI.h>
 
 namespace wsudo::server {
-
-// Maximum concurrent server connections. Being sudo, it's unlikely to have to
-// process many things concurrently, but we have to give Windows a number.
-constexpr int MaxPipeConnections = 10;
-
-// Pipe timeout, again for Windows.
-constexpr int PipeDefaultTimeout = 0;
 
 // Server status codes
 enum Status : int {
@@ -31,12 +23,12 @@ enum Status : int {
 
 inline const char *statusToString(Status status) {
   switch (status) {
-  default: return "unknown status";
-  case StatusUnset: return "status not set";
-  case StatusOk: return "ok";
-  case StatusCreatePipeFailed: return "pipe creation failed";
-  case StatusTimedOut: return "timed out";
-  case StatusEventFailed: return "event failed";
+    default: return "unknown status";
+    case StatusUnset: return "status not set";
+    case StatusOk: return "ok";
+    case StatusCreatePipeFailed: return "pipe creation failed";
+    case StatusTimedOut: return "timed out";
+    case StatusEventFailed: return "event failed";
   }
 }
 
@@ -57,8 +49,8 @@ private:
   SID_IDENTIFIER_AUTHORITY _sidAuth;
   Handle<PSID, FreeSid> _sid;
   EXPLICIT_ACCESS_W _explicitAccess;
-  Handle<PACL, LocalFree> _acl;
-  Handle<PSECURITY_DESCRIPTOR, LocalFree> _securityDescriptor;
+  HLocalPtr<PACL> _acl;
+  HLocalPtr<PSECURITY_DESCRIPTOR> _securityDescriptor;
   SECURITY_ATTRIBUTES _securityAttributes;
 };
 

@@ -1,4 +1,6 @@
-#ifndef WSUDO_NTAPI_H
+#if defined(WSUDO_NTAPI_H) || !defined(WSUDO_WSUDO_H)
+#error "Do not include this file directly; use wsudo.h."
+#else
 #define WSUDO_NTAPI_H
 
 /**
@@ -6,9 +8,6 @@
  * structures are incomplete; in those cases we don't have any need for the
  * rest of them.
  */
-
-#include <Windows.h>
-#include <winternl.h>
 
 namespace wsudo::nt {
 

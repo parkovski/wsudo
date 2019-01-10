@@ -42,8 +42,12 @@ set(SERVER_SRC
   main.cpp
   namedpipehandlefactory.cpp
   server.cpp
+  session.cpp
 )
 list(TRANSFORM SERVER_SRC PREPEND "lib/server/")
+
+include_directories(${PROJECT_SOURCE_DIR}/include)
+link_libraries(spdlog::spdlog fmt::fmt-header-only)
 
 add_library(wsudo_common STATIC ${COMMON_SRC})
 add_library(wsudo_client STATIC ${CLIENT_SRC})
@@ -51,14 +55,6 @@ add_library(wsudo_server STATIC ${SERVER_SRC})
 
 add_executable(wsudo lib/client/main.cpp)
 add_executable(TokenServer lib/server/main.cpp)
-
-include_directories(${PROJECT_SOURCE_DIR}/include)
-
-set(WSUDO_LIBRARIES spdlog::spdlog fmt::fmt-header-only)
-
-target_link_libraries(wsudo_common ${WSUDO_LIBRARIES})
-target_link_libraries(wsudo_client ${WSUDO_LIBRARIES})
-target_link_libraries(wsudo_server ${WSUDO_LIBRARIES})
 
 target_link_libraries(wsudo wsudo_client wsudo_common)
 target_link_libraries(TokenServer wsudo_server wsudo_common)

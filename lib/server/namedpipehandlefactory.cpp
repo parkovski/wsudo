@@ -44,7 +44,7 @@ NamedPipeHandleFactory::NamedPipeHandleFactory(LPCWSTR pipeName) noexcept
   _securityAttributes.bInheritHandle = false;
   _securityAttributes.lpSecurityDescriptor = _securityDescriptor;
 
-  log::trace("Pipe handle factory initialized for {}", to_utf8(pipeName));
+  log::debug("Named pipe security attributes initialized.");
 }
 
 HObject NamedPipeHandleFactory::operator()() {
@@ -55,15 +55,33 @@ HObject NamedPipeHandleFactory::operator()() {
   DWORD openMode = PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED;
   if (_firstInstance) {
     openMode |= FILE_FLAG_FIRST_PIPE_INSTANCE;
-    _firstInstance = false;
   }
 
-  return HObject{CreateNamedPipeW(_pipeName, openMode,
-                                  PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE |
-                                    PIPE_REJECT_REMOTE_CLIENTS,
-                                  MaxPipeConnections, PipeBufferSize,
-                                  PipeBufferSize, PipeDefaultTimeout,
-                                  &_securityAttributes)};
+  HANDLE pipe = CreateNamedPipeW(_pipeName, openMode,
+                                 PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE |
+                                   PIPE_REJECT_REMOTE_CLIENTS,
+                                 MaxPipeConnections, PipeBufferSize,
+                                 PipeBufferSize, PipeDefaultTimeout,
+                                 &_securityAttributes);
+
+  // We consider failing to open the first instance a critical failure,
+  // but subsequent failures are just warnings because we still have an open
+  // connection.
+  if (_firstInstance) {
+    if (!pipe) {
+      log::critical("Failed to create named pipe '{}'.", to_utf8(_pipeName));
+    } else {
+      log::info("Listening on '{}'.", to_utf8(_pipeName));
+    }
+  } else {
+    if (!pipe) {
+      log::warn("Failed to open named pipe instance for '{}'.",
+                to_utf8(_pipeName));
+    }
+  }
+
+  _firstInstance = false;
+  return HObject{pipe};
 }
 
 NamedPipeHandleFactory::operator bool() const {

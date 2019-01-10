@@ -2,7 +2,6 @@
 #define WSUDO_CLIENT_H
 
 #include "wsudo.h"
-#include "winsupport.h"
 
 #include <vector>
 

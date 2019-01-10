@@ -1,6 +1,5 @@
 #include "wsudo/server.h"
-#include "wsudo/events.h"
-#include "wsudo/ntapi.h"
+#include "wsudo/session.h"
 
 #pragma comment(lib, "Advapi32.lib")
 
@@ -9,6 +8,8 @@ using namespace wsudo::server;
 
 void wsudo::server::serverMain(Config &config) {
   using namespace events;
+
+  session::SessionManager sessionManager{60 * 10};
 
   NamedPipeHandleFactory pipeHandleFactory{config.pipeName.c_str()};
   if (!pipeHandleFactory) {

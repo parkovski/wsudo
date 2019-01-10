@@ -1,10 +1,12 @@
-#ifndef WSUDO_WINSUPPORT_H
+#if defined(WSUDO_WINSUPPORT_H) || !defined(WSUDO_WSUDO_H)
+#error "Do not include this file directly; use wsudo.h."
+#else
 #define WSUDO_WINSUPPORT_H
 
-#include <Windows.h>
 #include <exception>
 #include <string>
 #include <string_view>
+#include <type_traits>
 
 namespace wsudo {
 
@@ -31,7 +33,7 @@ public:
   explicit module_load_error(const char *module)
     : _error{GetLastError()},
       _message{
-        std::string("Module ") + module + " load failed: " +
+        std::string("Module '") + module + "' load failed: " +
           lastErrorString(_error)
       }
   {}
@@ -39,7 +41,7 @@ public:
   explicit module_load_error(const char *module, const char *function)
     : _error{GetLastError()},
       _message{
-        std::string("Function ") + module + "!" + function + " not found: " +
+        std::string("Function '") + module + "!" + function + "' not found: " +
           lastErrorString(_error)
       }
   {}
@@ -55,17 +57,17 @@ public:
 
 // Wrapper for calling dynamically into modules already loaded in this process.
 class LinkedModule {
-  std::string _name;
+  const wchar_t *_name;
   HMODULE _module;
 
 public:
   // Throws a module_load_error on failure.
   LinkedModule(const wchar_t *dllName)
-    : _name{to_utf8(dllName)},
+    : _name{dllName},
       _module{GetModuleHandleW(dllName)}
   {
     if (!_module) {
-      throw module_load_error{_name.c_str()};
+      throw module_load_error{to_utf8(_name).c_str()};
     }
   }
 
@@ -73,30 +75,74 @@ public:
   // Note: F may have a calling convention; R(Args...) does not.
   template<typename F, typename R, typename... Args>
   class Function<F, R(*)(Args...)> {
-    F _function;
   public:
+    // Throws a module_load_error on failure.
     Function(const LinkedModule &module, const char *name)
       : _function(reinterpret_cast<F>(GetProcAddress(module._module, name)))
     {
       if (!_function) {
-        throw module_load_error{module._name.c_str(), name};
+        throw module_load_error{to_utf8(module._name).c_str(), name};
       }
     }
+
     R operator()(Args ...args) const {
       return _function(std::forward<Args>(args)...);
     }
+
+  private:
+    F _function;
   };
 
+  // Get a pointer to the function `name` with type F from this module.
+  // Throws a module_load_error on failure.
   template<typename F>
   Function<F, F> get(const char *name) const {
     return Function<F, F>{*this, name};
   }
 };
 
-// RAII wrapper around Windows HANDLE values. Free should be the function that
-// closes this type of handle (e.g. CloseHandle)
 template<typename H, auto Free>
-class Handle {
+class Handle;
+
+namespace detail {
+  template<typename T, auto Free>
+  class pointer_operators {};
+
+  template<auto Free>
+  class pointer_operators<void *, Free> {};
+
+  template<auto Free>
+  class pointer_operators<const void *, Free> {};
+
+  template<typename T, auto Free>
+  class pointer_operators<T *, Free> {
+    using Self = Handle<T *, Free>;
+
+  public:
+    T *operator->() {
+      return static_cast<Self *>(this)->operator T *();
+    }
+
+    const T *operator->() const {
+      return static_cast<const Self *>(this)->operator const T *();
+    }
+
+    T &operator*() {
+      return *operator->();
+    }
+
+    const T &operator*() const {
+      return *operator->();
+    }
+  };
+} // namespace detail
+
+// RAII wrapper around Windows HANDLE values. Free should be the function that
+// closes this type of handle (e.g. CloseHandle).
+// This class is basically a reimplementation of unique_ptr, except that it has
+// some conveniences to make it easier to use in Windows API calls.
+template<typename H, auto Free>
+class Handle : public detail::pointer_operators<H, Free> {
   H _handle;
 
   void free() {
@@ -148,7 +194,11 @@ public:
 
   // Implicit conversion to a Windows handle - makes it easier to pass to
   // Win API functions.
-  operator H() const {
+  operator H() {
+    return _handle;
+  }
+
+  operator const H() const {
     return _handle;
   }
 
@@ -166,6 +216,10 @@ public:
 
 // Standard HANDLE with CloseHandle destructor.
 using HObject = Handle<HANDLE, CloseHandle>;
+
+// Pointer returned from Windows that needs to be freed with LocalFree.
+template<typename P>
+using HLocalPtr = Handle<P, LocalFree>;
 
 } // namespace wsudo
 

@@ -1,14 +1,22 @@
 #ifndef WSUDO_WSUDO_H
 #define WSUDO_WSUDO_H
 
-// #pragma warning(push)
-// #pragma warning(disable:4996) // codecvt deprecated
-// #define SPDLOG_WCHAR_FILENAMES
-// #define SPDLOG_WCHAR_TO_UTF8_SUPPORT
-// #define SPDLOG_NO_NAME
+#define _WIN32_WINNT _WIN32_WINNT_WIN7
+#define NTDDI_VERSION NTDDI_WIN7
+#include <Windows.h>
+#undef min
+#undef max
+#include "winsupport.h"
+
+// Winternl.h and NTSecAPI.h both define some of the same types so
+// we can't include both in the same file. Thanks Microsoft.
+#ifndef WSUDO_NO_NT_API
+#  include <winternl.h>
+#  include "ntapi.h"
+#endif
+
 #include <spdlog/spdlog.h>
 #include <spdlog/logger.h>
-// #pragma warning(pop)
 
 #include <cstdint>
 
@@ -19,6 +27,14 @@ extern const wchar_t *const PipeFullPath;
 
 /// Pipe's buffer size in bytes.
 constexpr size_t PipeBufferSize = 1024;
+
+// Maximum concurrent server connections. Being sudo, it's unlikely to have to
+// process many things concurrently, but we have to give Windows a number.
+constexpr int MaxPipeConnections = 3;
+
+// Pipe timeout, again for Windows.
+constexpr int PipeDefaultTimeout = 0;
+
 
 /// Message headers
 namespace msg {
@@ -203,4 +219,3 @@ namespace detail {
 #endif
 
 #endif // WSUDO_WSUDO_H
-

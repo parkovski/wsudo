@@ -1,6 +1,3 @@
-#include "wsudo/wsudo.h"
-#include "wsudo/winsupport.h"
-#include "wsudo/ntapi.h"
 #include "wsudo/server.h"
 
 #include <spdlog/sinks/stdout_color_sinks.h>
@@ -75,7 +72,7 @@ int wmain(int argc, wchar_t *argv[]) {
                  ENABLE_PROCESSED_OUTPUT | ENABLE_WRAP_AT_EOL_OUTPUT |
                  ENABLE_VIRTUAL_TERMINAL_PROCESSING);
 
-  log::info("WSudo Token Server: Pid = {}", GetCurrentProcessId());
+  log::info("WSudo Token Server: Pid = {}.", GetCurrentProcessId());
 
   // Clear control handlers and then set ours.
   if (!SetConsoleCtrlHandler(nullptr, false) ||

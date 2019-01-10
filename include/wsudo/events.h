@@ -5,7 +5,6 @@
 #include <cstdint>
 
 #include "wsudo.h"
-#include "winsupport.h"
 
 /**
  * Windows Event Server/Client
