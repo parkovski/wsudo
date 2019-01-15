@@ -35,7 +35,6 @@ It may be possible to achieve this without any undocumented APIs by creating the
 
 ## What features are missing?
 Most of them. Here are the big ones:
-- Actually check the user's password. Surprisingly using "password" for everyone is not very secure.
 - Create a token for the client user instead of just duplicating the server's token.
 - Cache the users' tokens for a while after a successful authentication (note: should be per-session).
 - Implement Windows service functionality for the server.
