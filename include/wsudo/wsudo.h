@@ -1,6 +1,7 @@
 #ifndef WSUDO_WSUDO_H
 #define WSUDO_WSUDO_H
 
+#define WINVER _WIN32_WINNT_WIN7
 #define _WIN32_WINNT _WIN32_WINNT_WIN7
 #define NTDDI_VERSION NTDDI_WIN7
 #include <Windows.h>
@@ -19,6 +20,7 @@
 #include <spdlog/logger.h>
 
 #include <cstdint>
+#include <cassert>
 
 namespace wsudo {
 
@@ -40,6 +42,9 @@ constexpr int PipeDefaultTimeout = 0;
 namespace msg {
   /// Client->Server message headers
   namespace client {
+    /// Query session - server should tell how, if possible, to create the
+    /// session.
+    extern const char *const QuerySession;
     /// User credentials message
     extern const char *const Credential;
     /// Bless (elevate process) request message
@@ -197,22 +202,19 @@ namespace detail {
 
 #define WSUDO_CONCAT_IMPL(a,b) a##b
 #define WSUDO_CONCAT2(a,b) WSUDO_CONCAT_IMPL(a,b)
-#define WSUDO_CONCAT3(a,b,c) WSUDO_CONCAT2(WSUDO_CONCAT2(a,b),c)
-#define WSUDO_CONCAT4(a,b,c,d) WSUDO_CONCAT2(WSUDO_CONCAT2(a,b),WSUDO_CONCAT2(c,d))
 
 // Scope destructor.
 // Usage: WSUDO_SCOPEEXIT { capture-by-ref lambda body };
 #define WSUDO_SCOPEEXIT \
-  [[maybe_unused]] auto const &WSUDO_CONCAT4(_scopeExit_, __func__, _, __LINE__) = \
+  [[maybe_unused]] auto const &WSUDO_CONCAT2(_scopeExit_, __LINE__) = \
     ::wsudo::detail::ScopeExitHelper{} % [&]()
 
 // Scope destructor that captures the this pointer by value.
 #define WSUDO_SCOPEEXIT_THIS \
-  [[maybe_unused]] auto const &WSUDO_CONCAT4(_scopeExit_, __func__, _, __LINE__) = \
+  [[maybe_unused]] auto const &WSUDO_CONCAT2(_scopeExit_, __LINE__) = \
     ::wsudo::detail::ScopeExitHelper{} % [&, this]()
 
 #ifndef NDEBUG
-# include <cassert>
 # define WSUDO_UNREACHABLE(why) do { assert(0 && (why)); __assume(0); } while(0)
 #else
 # define WSUDO_UNREACHABLE(why) __assume(0)

@@ -11,6 +11,7 @@ const wchar_t *const PipeFullPath = L"\\\\.\\pipe\\wsudo_token_server";
 
 namespace msg {
   namespace client {
+    const char *const QuerySession = "QSES";
     const char *const Credential = "CRED";
     const char *const Bless = "BLES";
   }

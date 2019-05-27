@@ -25,6 +25,7 @@ enum class EventStatus {
 
 class EventListener;
 
+// A waitable event based on Windows timers.
 // The callback in operator() is triggered when the event is signaled.
 class EventHandler {
 public:
@@ -122,7 +123,7 @@ protected:
 
 private:
   // Position in buffer to begin reading or writing, depending on IO state.
-  size_t _offset{0};
+  size_t _offset = 0;
 
   enum class IOState {
     Inactive,
@@ -185,6 +186,12 @@ public:
 
   // Run the event loop until a quit is triggered. Returns Finished or Failed.
   EventStatus run(DWORD timeout = INFINITE);
+
+  // Return the number of events in the queue.
+  size_t count() const {
+    assert(_events.size() == _handlers.size());
+    return _events.size();
+  }
 
   bool isRunning() const { return _running; }
   void stop() { _running = false; }
