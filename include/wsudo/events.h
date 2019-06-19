@@ -50,12 +50,18 @@ public:
 };
 
 // Lambda wrapper event handler.
-template<typename F, bool AllowReset = false>
+template<
+  typename F,
+  bool AllowReset = false,
+  typename = std::enable_if_t<
+               std::is_invocable_r_v<EventStatus, F, EventListener &>
+             >
+>
 class EventCallback final : public EventHandler {
 public:
-  EventCallback(F &&callback) noexcept
-    : _callback{std::move(callback)},
-      _event{CreateEventW(nullptr, false, false, nullptr)}
+  EventCallback(HANDLE event, F callback) noexcept
+    : _callback(std::move(callback)),
+      _event(event)
   {}
 
   HANDLE event() const override { return _event; }
@@ -171,14 +177,11 @@ public:
     return handler;
   }
 
-  // Add a lambda event handler.
+  // Add a lambda event handler with a custom event object.
   template<bool AllowReset = false, typename F>
-  std::enable_if_t<
-    std::is_invocable_r_v<EventStatus, F, EventListener &>,
-    EventCallback<F, AllowReset> &
-  >
-  emplace(F &&callback) {
-    return emplace<EventCallback<F, AllowReset>>(std::move(callback));
+  EventCallback<F, AllowReset> &
+  emplace(HANDLE event, F callback) {
+    return emplace<EventCallback<F, AllowReset>>(event, std::move(callback));
   }
 
   // Run one iteration of the event loop.

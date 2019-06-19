@@ -18,12 +18,11 @@ void wsudo::server::serverMain(Config &config) {
   }
 
   EventListener listener;
-  *config.quitEvent = listener.emplace(
-    [](EventListener &listener) {
-      listener.stop();
-      return EventStatus::Finished;
-    }
-  ).event();
+  *config.quitEvent = CreateEventW(nullptr, true, false, nullptr);
+  listener.emplace(*config.quitEvent, [](EventListener &listener) {
+    listener.stop();
+    return EventStatus::Finished;
+  });
 
   for (int id = 1; id <= MaxPipeConnections; ++id) {
     listener.emplace<ClientConnectionHandler>(pipeHandleFactory(), id,
@@ -34,7 +33,7 @@ void wsudo::server::serverMain(Config &config) {
 
   if (status == EventStatus::Failed) {
     config.status = StatusEventFailed;
-  } else if (status == EventStatus::Finished) {
+  } else {
     config.status = StatusOk;
   }
 }

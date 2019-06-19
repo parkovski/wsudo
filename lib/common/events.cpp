@@ -20,6 +20,10 @@ bool EventHandler::reset() {
 EventStatus EventListener::next(DWORD timeout) {
   log::trace("Waiting on {} events.", _events.size());
 
+  if (_events.size() == 0) {
+    return EventStatus::Finished;
+  }
+
   auto waitResult = WaitForMultipleObjects(
     static_cast<DWORD>(_events.size()), &_events[0], false, timeout
   );
@@ -72,13 +76,13 @@ EventStatus EventListener::next(DWORD timeout) {
     return EventStatus::Failed;
   }
 
-  return _running ? EventStatus::Ok : EventStatus::Finished;
+  return _events.size() > 0 ? EventStatus::Ok : EventStatus::Finished;
 }
 
 EventStatus EventListener::run(DWORD timeout) {
   _running = true;
 
-  while (true) {
+  while (_running) {
     auto status = next(timeout);
     if (status != EventStatus::Ok) {
       return status;

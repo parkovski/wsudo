@@ -1,16 +1,22 @@
 #include "wsudo/wsudo.h"
+#include "wsudo/events.h"
 
-#define CATCH_CONFIG_MAIN
+#include <spdlog/sinks/stdout_color_sinks.h>
+
+#define CATCH_CONFIG_RUNNER
 #include <catch.hpp>
 
 using namespace wsudo;
 
-static int add_one(int i) {
-  return i + 1;
-}
+int main(int argc, char *argv[]) {
+  log::g_outLogger = spdlog::stdout_color_mt("wsudo.out");
+  log::g_errLogger = spdlog::stderr_color_mt("wsudo.err");
 
-TEST_CASE("Sample", "[sample]") {
-  REQUIRE(add_one(1) == 2);
+  WSUDO_SCOPEEXIT { spdlog::drop_all(); };
+
+  int result = Catch::Session().run(argc, argv);
+
+  return result;
 }
 
 TEST_CASE("LogonUser", "[.logon]") {
@@ -44,4 +50,47 @@ TEST_CASE("LogonUser", "[.logon]") {
     FAIL("LogonUserExW failed" << lastErrorString());
   }
   REQUIRE(!!token);
+}
+
+TEST_CASE("EventListener chooses correctly.", "[events]") {
+  using namespace events;
+
+  EventListener listener;
+  FILETIME systemTime;
+  int timerNr = 0;
+
+  GetSystemTimeAsFileTime(&systemTime);
+
+  // id = a number to identify the timer.
+  // duration = time in milliseconds before the timer is triggered.
+  auto addTimer = [&](int id, long duration) {
+    HANDLE timer = CreateWaitableTimerW(nullptr, true, nullptr);
+
+    union {
+      FILETIME fileTime;
+      LARGE_INTEGER dueTime;
+    };
+    fileTime = systemTime;
+    // Timers use 100ns intervals, but we want ms.
+    dueTime.QuadPart += duration * 10000;
+
+    SetWaitableTimer(timer, &dueTime, 0, nullptr, nullptr, false);
+
+    listener.emplace(timer, [id, &timerNr](EventListener &){
+      timerNr = id;
+      return EventStatus::Finished;
+    });
+  };
+
+  // Timer order: 2, 3, 1.
+  addTimer(1, 30);
+  addTimer(2, 10);
+  addTimer(3, 20);
+
+  REQUIRE(listener.next() == EventStatus::Ok);
+  REQUIRE(timerNr == 2);
+  REQUIRE(listener.next() == EventStatus::Ok);
+  REQUIRE(timerNr == 3);
+  REQUIRE(listener.next() == EventStatus::Finished);
+  REQUIRE(timerNr == 1);
 }
