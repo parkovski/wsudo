@@ -9,7 +9,7 @@ const wchar_t *const TestPipeName = L"\\\\.\\pipe\\wsudo_test_pipe";
 
 TEST_CASE("Named pipe handle factory works", "[pipe]") {
   server::NamedPipeHandleFactory factory(TestPipeName);
-  REQUIRE((bool)factory);
+  REQUIRE(factory.good());
   auto firstHandle = factory();
   REQUIRE(firstHandle != nullptr);
   auto secondHandle = factory();
@@ -19,7 +19,7 @@ TEST_CASE("Named pipe handle factory works", "[pipe]") {
 #if 0
 TEST_CASE("Named pipe client connections work", "[pipe]") {
   server::NamedPipeHandleFactory factory(TestPipeName);
-  REQUIRE((bool)factory);
+  REQUIRE(factory.good());
 
   auto firstHandle = factory();
   auto secondHandle = factory();

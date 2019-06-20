@@ -7,12 +7,38 @@
 
 namespace wsudo {
 
-constexpr int ClientExitAccessDenied = 225;
-constexpr int ClientExitUserCanceled = 226;
-constexpr int ClientExitCreateProcessError = 227;
-constexpr int ClientExitInvalidUsage = 228;
-constexpr int ClientExitSystemError = 229;
-constexpr int ClientExitServerNotFound = 230;
+// Codes returned by client main indicating the reason for exiting.
+enum ClientExitCode {
+  ClientExitOk                  = 0,
+  ClientExitAccessDenied        = 225,
+  ClientExitUserCanceled        = 226,
+  ClientExitCreateProcessError  = 227,
+  ClientExitInvalidUsage        = 228,
+  ClientExitSystemError         = 229,
+  ClientExitServerNotFound      = 230,
+};
+
+// Returns a description of a ClientExitCode.
+static inline const char *clientExitToString(ClientExitCode code) {
+  switch (code) {
+    default:
+      return "unknown";
+    case ClientExitOk:
+      return "ok";
+    case ClientExitAccessDenied:
+      return "access denied";
+    case ClientExitUserCanceled:
+      return "user canceled";
+    case ClientExitCreateProcessError:
+      return "error creating process";
+    case ClientExitInvalidUsage:
+      return "invalid usage";
+    case ClientExitSystemError:
+      return "system error";
+    case ClientExitServerNotFound:
+      return "server not found";
+  }
+}
 
 class ClientConnection {
   HObject _pipe;

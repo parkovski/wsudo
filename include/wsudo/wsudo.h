@@ -68,7 +68,10 @@ namespace msg {
 
 namespace log {
 
+// Logger that prints to stdout.
 extern std::shared_ptr<spdlog::logger> g_outLogger;
+
+// Logger that prints to stderr.
 extern std::shared_ptr<spdlog::logger> g_errLogger;
 
 /// Print to stdout with no prefix.

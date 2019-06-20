@@ -10,6 +10,8 @@ EventHandler::~EventHandler() {
 }
 
 bool EventHandler::reset() {
+  // By default, event handlers cannot be reused. Subclasses must opt in to
+  // this behavior.
   return false;
 }
 
@@ -65,7 +67,6 @@ EventStatus EventListener::next(DWORD timeout) {
     size_t index = (size_t)(waitResult - WAIT_ABANDONED_0);
     log::error("Mutex abandoned state signaled for handler #{}.", index);
     remove(index);
-    return EventStatus::Failed;
   } else if (waitResult == WAIT_FAILED) {
     log::critical("WaitForMultipleObjects failed: {}",
                   lastErrorString());
@@ -94,7 +95,12 @@ EventStatus EventListener::run(DWORD timeout) {
 }
 
 void EventListener::remove(size_t index) {
-  assert(index < _handlers.size());
+  if (index >= _handlers.size()) {
+    log::error("Event index {} out of range.", index);
+    return;
+  }
+
+  assert(_handlers.size() == _events.size());
 
   _events.erase(_events.cbegin() + index);
   _handlers.erase(_handlers.cbegin() + index);

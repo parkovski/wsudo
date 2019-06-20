@@ -84,7 +84,10 @@ private:
   HObject _event;
 };
 
-// Handles overlapped IO operations when the event is triggered.
+// Handles overlapped IO operations when the event is triggered. Inheriting from
+// this class enables subclasses to easily use overlapped IO to incrementally
+// read from a file handle and be notified when the entire message is received,
+// or to write a large message all at once but send it in smaller chunks.
 class EventOverlappedIO : public EventHandler {
 public:
   EventOverlappedIO() = delete;
@@ -102,21 +105,23 @@ public:
   EventOverlappedIO(EventOverlappedIO &&) = delete;
   EventOverlappedIO &operator=(EventOverlappedIO &&) = delete;
 
-  // Returns false. Subclasses can override this to reset their own state and
-  // return true.
+  // Returns false, but succeeds. Subclasses can override this to reset their
+  // own state and return true. If this is overridden, a subclass must call
+  // EventOverlappedIO::reset().
   bool reset() override;
 
   // Returns the overlapped trigger event.
   HANDLE event() const override { return _overlapped.hEvent; }
 
   // Subclasses should call this first to handle chunked reading/writing.
+  // Returns EventStatus::Finished when reading/writing is done.
   EventStatus operator()(EventListener &) override;
 
 protected:
   OVERLAPPED _overlapped{};
   std::vector<uint8_t> _buffer{};
 
-  // Overrides should return an overlapped readable/writable handle here.
+  // Subclasses should return an overlapped readable/writable handle here.
   virtual HANDLE fileHandle() const = 0;
 
   // Begin reading from the file handle. Subclasses must call operator() for
@@ -131,10 +136,15 @@ private:
   // Position in buffer to begin reading or writing, depending on IO state.
   size_t _offset = 0;
 
+  // Determines if any IO action needs to take place.
   enum class IOState {
+    // No IO is queued.
     Inactive,
+    // We are waiting to read from the file.
     Reading,
+    // We are waiting to write to the file.
     Writing,
+    // Reading or writing failed.
     Failed,
   } _ioState{IOState::Inactive};
 
@@ -143,9 +153,15 @@ private:
   // Max amount to read/write at once.
   const DWORD ChunkSize = static_cast<DWORD>(PipeBufferSize);
 
+  // Begins an overlapped read operation.
   EventStatus beginRead();
+  // Finishes an overlapped read operation. Not all the data may be read at
+  // this point. See EventOverlappedIO::operator().
   EventStatus endRead();
+  // Begins an overlapped write operation.
   EventStatus beginWrite();
+  // Finishes an overlapped write operation. Not all the data may be written at
+  // this point. See EventOverlappedIO::operator().
   EventStatus endWrite();
 };
 
@@ -177,7 +193,9 @@ public:
     return handler;
   }
 
-  // Add a lambda event handler with a custom event object.
+  // Add a function object or lambda event handler with a custom event object.
+  // If AllowReset is true, the event will be reset and the handler reused
+  // after it finishes.
   template<bool AllowReset = false, typename F>
   EventCallback<F, AllowReset> &
   emplace(HANDLE event, F callback) {

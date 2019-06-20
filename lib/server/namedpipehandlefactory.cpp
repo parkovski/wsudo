@@ -83,7 +83,7 @@ HObject NamedPipeHandleFactory::operator()() {
   return HObject{pipe};
 }
 
-NamedPipeHandleFactory::operator bool() const {
+bool NamedPipeHandleFactory::good() const {
   // _securityAttributes is only set when all initialization succeeded.
   return _securityAttributes.nLength == sizeof(SECURITY_ATTRIBUTES);
 }

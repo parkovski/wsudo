@@ -56,8 +56,7 @@ void ClientConnectionHandler::createResponse(const char *header,
   assert(strlen(header) == 4);
   size_t totalSize = 4 + message.length();
   if (_buffer.size() < totalSize) {
-    // Keep size in chunks of PipeBufferSize
-    _buffer.reserve(totalSize / PipeBufferSize + PipeBufferSize);
+    _buffer.resize(totalSize);
   }
   std::memcpy(_buffer.data(), header, 4);
   if (message.length()) {
@@ -164,17 +163,17 @@ bool ClientConnectionHandler::dispatchMessage() {
   WSUDO_SCOPEEXIT_THIS {
     if (_buffer.size() < 4 || !std::memcmp(_buffer.data(), header, 4)) {
       log::debug("Response was not set!");
-      createResponse(msg::server::InternalError, "Unknown error.");
+      createResponse(msg::server::InternalError);
     }
   };
 
   if (!std::memcmp(header, msg::client::Credential, 4)) {
     // Verify the username/password pair.
-    auto bufferEnd = _buffer.cend();
-    auto usernameBegin = _buffer.cbegin() + 4;
+    auto bufferEnd = _buffer.end();
+    auto usernameBegin = _buffer.begin() + 4;
     auto usernameEnd = usernameBegin;
     while (true) {
-      if (usernameEnd == bufferEnd) {
+      if (usernameEnd >= bufferEnd - 1) {
         log::warn("Client {}: Password not found in message.", _clientId);
         createResponse(msg::server::InvalidMessage,
                        "Password missing.");
@@ -201,8 +200,8 @@ bool ClientConnectionHandler::dispatchMessage() {
       ++passwordEnd;
     }
     _buffer.emplace_back(0);
-    return tryToLogonUser(reinterpret_cast<const char *>(&*usernameBegin),
-                          reinterpret_cast<const char *>(&*passwordBegin));
+    return tryToLogonUser(reinterpret_cast<char *>(&*usernameBegin),
+                          reinterpret_cast<char *>(&*passwordBegin));
   } else if (!std::memcmp(header, msg::client::Bless, 4)) {
     if (_buffer.size() != 4 + sizeof(HANDLE)) {
       log::warn("Client {}: Invalid bless message.", _clientId);
@@ -226,11 +225,14 @@ bool ClientConnectionHandler::dispatchMessage() {
   }
 }
 
-bool ClientConnectionHandler::tryToLogonUser(const char *username,
-                                             const char *password)
-{
+bool ClientConnectionHandler::tryToLogonUser(char *username, char *password) {
   auto username_w = to_utf16(username);
   auto password_w = to_utf16(password);
+  // Zero the password from memory.
+  while (*password) {
+    *password++ = 0;
+  }
+
   auto session = _sessionManager.find(username_w);
   if (!session) {
     session = _sessionManager.create(username_w, L"", std::move(password_w));

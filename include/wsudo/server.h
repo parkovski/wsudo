@@ -42,7 +42,11 @@ public:
   HObject operator()();
 
   // Returns true if initialization succeeded and a connection can be created.
-  explicit operator bool() const;
+  bool good() const;
+
+  //
+  explicit operator bool() const
+  { return good(); }
 
 private:
   bool _firstInstance = true;
@@ -91,10 +95,11 @@ private:
 
   // Returns true to read another message, false to reset the connection.
   bool dispatchMessage();
-  bool tryToLogonUser(const char *username, const char *password);
+  bool tryToLogonUser(char *username, char *password);
   bool bless(HANDLE remoteHandle);
 };
 
+// Server configuration.
 struct Config {
   // Named pipe filename.
   std::wstring pipeName;
@@ -110,6 +115,9 @@ struct Config {
   {}
 };
 
+// Run the server. This function will continue until an error occurs or the
+// quit event is triggered. After it returns, config.status will be set to
+// the server's exit status.
 void serverMain(Config &config);
 
 } // namespace wsudo::server

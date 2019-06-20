@@ -8,11 +8,19 @@ namespace wsudo {
 #pragma warning(disable: 4996) // codecvt deprecation warning
 
 std::string to_utf8(std::wstring_view utf16str) {
+  if (utf16str.empty()) {
+    return std::string{};
+  }
+
   return std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>, wchar_t>{}
           .to_bytes(&utf16str.front(), &utf16str.back() + 1);
 }
 
 std::wstring to_utf16(std::string_view utf8str) {
+  if (utf8str.empty()) {
+    return std::wstring{};
+  }
+
   return std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>, wchar_t>{}
             .from_bytes(&utf8str.front(), &utf8str.back() + 1);
 }

@@ -122,6 +122,7 @@ EventStatus EventOverlappedIO::endWrite() {
 
 bool EventOverlappedIO::reset() {
   _ioState = IOState::Inactive;
+  _offset = 0;
   return false;
 }
 

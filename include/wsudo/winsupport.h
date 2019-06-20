@@ -56,6 +56,7 @@ public:
 };
 
 // Wrapper for calling dynamically into modules already loaded in this process.
+// Used for ntdll which must be called dynamically.
 class LinkedModule {
   const wchar_t *_name;
   HMODULE _module;
