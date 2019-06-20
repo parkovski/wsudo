@@ -1,9 +1,7 @@
 #include "wsudo/client.h"
 
 #include <spdlog/sinks/stdout_color_sinks.h>
-#include <fmt/format.h>
 #include <string>
-#include <iostream>
 #include <cstdint>
 #include <cassert>
 #include <cstring>
@@ -101,7 +99,7 @@ bool ClientConnection::bless(HANDLE process) {
 
 bool ClientConnection::readServerMessage() {
   if (_buffer.size() < 4) {
-    std::wcerr << L"Unknown server response.\n";
+    log::error("Unknown server response.\n");
     return false;
   }
   char header[5];
@@ -113,18 +111,18 @@ bool ClientConnection::readServerMessage() {
     return true;
   }
   if (!std::memcmp(header, msg::server::InvalidMessage, 4)) {
-    std::wcerr << L"Invalid message.";
+    log::eprint("Invalid message");
   } else if (!std::memcmp(header, msg::server::InternalError, 4)) {
-    std::wcerr << L"Internal server error.";
+    log::eprint("Internal server error");
   } else if (!std::memcmp(header, msg::server::AccessDenied, 4)) {
-    std::wcerr << L"Access denied; this incident will be reported.";
+    log::eprint("Access denied; this incident will be reported");
     // TODO: Send email to police.
   }
   if (_buffer.size() > 4) {
     _buffer.push_back(0);
-    std::cout << ": " << (_buffer.data() + 4) << "\n";
+    log::eprint(": {}\n", (_buffer.data() + 4));
   } else {
-    std::wcout << L".\n";
+    log::eprint("\n");
   }
   return false;
 }
@@ -171,16 +169,17 @@ int wmain(int argc, wchar_t *argv[]) {
   log::g_outLogger->set_level(spdlog::level::trace);
   log::g_errLogger = spdlog::stderr_color_mt("wsudo.err");
   log::g_errLogger->set_level(spdlog::level::warn);
+  spdlog::set_pattern("%^[%l]%$ %v");
   WSUDO_SCOPEEXIT { spdlog::drop_all(); };
 
   if (argc < 2) {
-    std::wcerr << L"Usage: wsudo <program> <args>\n";
+    log::eprint("Usage: wsudo <program> <args>\n");
     return ClientExitInvalidUsage;
   }
 
   ClientConnection conn{PipeFullPath};
   if (!conn) {
-    std::wcerr << L"Connection to server failed.\n";
+    log::critical("Connection to server failed.\n");
     return ClientExitServerNotFound;
   }
 
@@ -199,13 +198,13 @@ int wmain(int argc, wchar_t *argv[]) {
   if (GetLastError() == ERROR_MORE_DATA) {
     username.resize(usernameLength);
     if (!GetUserNameExW(NameSamCompatible, username.data(), &usernameLength)) {
-      std::wcerr << L"Can't get username.\n";
+      log::critical("Can't get username.\n");
       return ClientExitSystemError;
     }
     // It ends in a null that we don't want printed.
     username.erase(username.cend() - 1);
   } else {
-    std::wcerr << L"Can't get username.\n";
+    log::critical("Can't get username.\n");
     return ClientExitSystemError;
   }
 
@@ -214,8 +213,8 @@ int wmain(int argc, wchar_t *argv[]) {
   }
 
   std::wstring password{};
-  std::wcout << L"[wsudo] password for " << username << ": ";
-  std::wcout.flush();
+  log::print(L"[wsudo] password for {}: ", username);
+  fflush(stdout);
   {
     SetConsoleMode(hStdin, ENABLE_EXTENDED_FLAGS | ENABLE_QUICK_EDIT_MODE);
     while (true) {
@@ -226,7 +225,7 @@ int wmain(int argc, wchar_t *argv[]) {
       }
       if (ch == 13 || ch == 10) {
         // Enter
-        std::wcout << std::endl;
+        log::print("\n");
         break;
       } else if (ch == 8 || ch == 0x7F) {
         // Backspace
@@ -235,14 +234,13 @@ int wmain(int argc, wchar_t *argv[]) {
         }
       } else if (ch == 3) {
         // Ctrl-C
-        std::wcout << L"\nCanceled.";
+        log::print("\nCanceled.\n");
         return ClientExitUserCanceled;
       } else {
         password.push_back((wchar_t)ch);
       }
     }
     SetConsoleMode(hStdin, newStdinMode);
-    std::wcin.sync();
   }
 
   auto u8creds = to_utf8(username);
@@ -254,12 +252,12 @@ int wmain(int argc, wchar_t *argv[]) {
 
   auto [process, thread] = createProcess(argc - 1, argv + 1);
   if (!process) {
-    std::wcerr << "Error creating process.\n";
+    log::critical("Error creating process: {}.\n", lastErrorString());
     return ClientExitCreateProcessError;
   }
 
   if (!conn.bless(process)) {
-    std::wcerr << L"Server failed to adjust privileges\n";
+    log::critical("Server failed to adjust privileges\n");
     TerminateProcess(process, 1);
     CloseHandle(thread);
     CloseHandle(process);

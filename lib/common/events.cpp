@@ -82,12 +82,15 @@ EventStatus EventListener::next(DWORD timeout) {
 EventStatus EventListener::run(DWORD timeout) {
   _running = true;
 
+  auto status = EventStatus::Finished;
   while (_running) {
-    auto status = next(timeout);
+    status = next(timeout);
     if (status != EventStatus::Ok) {
-      return status;
+      break;
     }
   }
+
+  return status;
 }
 
 void EventListener::remove(size_t index) {

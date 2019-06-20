@@ -37,8 +37,8 @@ SessionManager::SessionManager(unsigned defaultTtlSeconds) noexcept
   // wstring constructor expects a length in wchar_t sized characters.
   _localDomain = std::wstring{accountDomain->DomainName.Buffer,
                               (size_t)(accountDomain->DomainName.Length) >> 1};
-  log::info("Session manager initialized for local domain '{}'.",
-            to_utf8(_localDomain));
+  log::info(L"Session manager initialized for local domain '{}'.",
+            _localDomain);
 }
 
 std::shared_ptr<Session> SessionManager::find(std::wstring_view username,
@@ -57,15 +57,15 @@ std::shared_ptr<Session> SessionManager::store(Session &&session) {
   //std::wstring_view domain{session.domain()};
   std::wstring_view name{session.username()};
   if (!session) {
-    log::info("Failed login attempt for {}.", to_utf8(name));
+    log::info(L"Failed login attempt for {}.", name);
     return std::shared_ptr<Session>{};
   }
-  log::debug("Session username: {}.", to_utf8(name));
+  log::debug(L"Session username: {}.", name);
   auto [it, inserted] = _sessions.try_emplace(
     name, std::make_shared<Session>(std::move(session))
   );
   if (!inserted) {
-    log::warn("Session already exists for '{}'.", to_utf8(name));
+    log::warn(L"Session already exists for '{}'.", name);
   }
   return it->second;
 }

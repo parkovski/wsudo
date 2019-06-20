@@ -69,14 +69,13 @@ HObject NamedPipeHandleFactory::operator()() {
   // connection.
   if (_firstInstance) {
     if (!pipe) {
-      log::critical("Failed to create named pipe '{}'.", to_utf8(_pipeName));
+      log::critical(L"Failed to create named pipe '{}'.", _pipeName);
     } else {
-      log::info("Listening on '{}'.", to_utf8(_pipeName));
+      log::info(L"Listening on '{}'.", _pipeName);
     }
   } else {
     if (!pipe) {
-      log::warn("Failed to open named pipe instance for '{}'.",
-                to_utf8(_pipeName));
+      log::warn(L"Failed to open named pipe instance for '{}'.", _pipeName);
     }
   }
 
