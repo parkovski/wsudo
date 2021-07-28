@@ -16,13 +16,13 @@
 #  include "ntapi.h"
 #endif
 
-#define SPDLOG_WCHAR_TO_UTF8_SUPPORT
 #include <spdlog/spdlog.h>
 #include <spdlog/logger.h>
 
 #include <cstdint>
 #include <cassert>
 #include <cstdio>
+#include <type_traits>
 
 namespace wsudo {
 

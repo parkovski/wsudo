@@ -1,7 +1,6 @@
-#if defined(WSUDO_WINSUPPORT_H) || !defined(WSUDO_WSUDO_H)
+#if !defined(WSUDO_WSUDO_H)
 #error "Do not include this file directly; use wsudo.h."
-#else
-#define WSUDO_WINSUPPORT_H
+#endif
 
 #include <exception>
 #include <string>
@@ -223,5 +222,3 @@ template<typename P>
 using HLocalPtr = Handle<P, LocalFree>;
 
 } // namespace wsudo
-
-#endif // WSUDO_WINSUPPORT_H
