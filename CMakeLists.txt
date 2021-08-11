@@ -10,7 +10,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-option(WSUDO_BUILD_TESTS "Build tests" ON)
+if(NOT DEFINED CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE MATCHES "Deb")
+  set(WSUDO_BUILD_TESTS ON)
+endif()
+option(WSUDO_BUILD_TESTS "Build tests" OFF)
 
 list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
 
@@ -19,6 +22,7 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
 
 find_package(spdlog REQUIRED)
 find_package(fmt REQUIRED)
+find_package(WIL REQUIRED)
 
 set(COMMON_SRC
   common.cpp
@@ -41,6 +45,8 @@ set(SERVER_SRC
   session.cpp
 )
 list(TRANSFORM SERVER_SRC PREPEND "lib/server/")
+
+add_definitions(-DUNICODE)
 
 include_directories(${PROJECT_SOURCE_DIR}/include)
 link_libraries(spdlog::spdlog fmt::fmt-header-only)
