@@ -1,5 +1,6 @@
 #include "wsudo/wsudo.h"
-#include <catch.hpp>
+
+#include <catch2/catch_all.hpp>
 
 TEST_CASE("LogonUser", "[.logon]") {
   wchar_t username[256];

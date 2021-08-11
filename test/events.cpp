@@ -1,6 +1,6 @@
 #include "wsudo/events.h"
 
-#include <catch.hpp>
+#include <catch2/catch_all.hpp>
 
 TEST_CASE("EventListener chooses correctly.", "[events]") {
   using namespace wsudo::events;

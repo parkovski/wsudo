@@ -3,7 +3,7 @@
 #include <spdlog/sinks/stdout_color_sinks.h>
 
 #define CATCH_CONFIG_RUNNER
-#include <catch.hpp>
+#include <catch2/catch_all.hpp>
 
 using namespace wsudo;
 
