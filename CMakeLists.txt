@@ -24,41 +24,12 @@ find_package(WIL REQUIRED)
 
 find_path(wscoro_INCLUDE_DIR wscoro/wscoro.h HINTS ../wscoro/include REQUIRED)
 
-set(COMMON_SRC
-  common.cpp
-  events.cpp
-  overlapped.cpp
-  winsupport.cpp
-)
-list(TRANSFORM COMMON_SRC PREPEND "lib/common/")
-
-set(CLIENT_SRC
-  main.cpp
-)
-list(TRANSFORM CLIENT_SRC PREPEND "lib/client/")
-
-set(SERVER_SRC
-  clientconnection.cpp
-  main.cpp
-  namedpipehandlefactory.cpp
-  server.cpp
-  session.cpp
-)
-list(TRANSFORM SERVER_SRC PREPEND "lib/server/")
-
 add_definitions(-DUNICODE -D_UNICODE)
 include_directories(${PROJECT_SOURCE_DIR}/include ${wscoro_INCLUDE_DIR})
 link_libraries(spdlog::spdlog fmt::fmt-header-only WIL::WIL)
 
-add_library(wsudo_common STATIC ${COMMON_SRC})
-add_library(wsudo_client STATIC ${CLIENT_SRC})
-add_library(wsudo_server STATIC ${SERVER_SRC})
-
-add_executable(wsudo lib/client/main.cpp)
-add_executable(TokenServer lib/server/main.cpp)
-
-target_link_libraries(wsudo wsudo_client wsudo_common)
-target_link_libraries(TokenServer wsudo_server wsudo_common)
+add_subdirectory(lib)
+add_subdirectory(bin)
 
 if(WSUDO_BUILD_TESTS)
   add_subdirectory(test)
