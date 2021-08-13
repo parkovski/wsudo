@@ -11,13 +11,8 @@ TEST_CASE("Coroutine IO", "[corio]") {
   constexpr size_t gpl3_size_lf = 35149;
   constexpr size_t gpl3_size_crlf = 35823;
 
-  wil::unique_hfile file{
-    CreateFile(gpl3_path, GENERIC_READ, FILE_SHARE_READ, nullptr,
-               OPEN_EXISTING, FILE_FLAG_OVERLAPPED | FILE_FLAG_SEQUENTIAL_SCAN,
-               nullptr)
-  };
   CorIO corio;
-  CorIO::FileToken fileToken{corio, file.get()};
+  auto fileToken = corio.openForReading(gpl3_path, FILE_FLAG_SEQUENTIAL_SCAN);
 
   auto task = fileToken.readToEnd();
   task.resume();

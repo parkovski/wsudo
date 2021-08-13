@@ -40,14 +40,14 @@ void CorIO::listener() noexcept {
   }
 }
 
-CorIO::FileToken::FileToken(CorIO &corio, HANDLE file)
-  : _file{file}, _overlapped{}, _coroutine{}
+CorIO::FileToken::FileToken(CorIO &corio, wil::unique_hfile file)
+  : _file{std::move(file)}, _overlapped{}, _coroutine{}
 {
   corio.registerToken(*this);
 }
 
 wscoro::Task<size_t>
-CorIO::FileToken::read(std::span<std::byte> buffer) {
+CorIO::FileToken::read(std::span<char> buffer) {
   const size_t chunkSize = 1024;
 
   _coroutine = co_await wscoro::this_coroutine;
@@ -61,8 +61,8 @@ CorIO::FileToken::read(std::span<std::byte> buffer) {
     _overlapped.Internal = 0;
     _overlapped.InternalHigh = 0;
     _overlapped.hEvent = nullptr;
-    ReadFile(_file, buffer.data() + bufferOffset, static_cast<DWORD>(readSize),
-             nullptr, &_overlapped);
+    ReadFile(_file.get(), buffer.data() + bufferOffset,
+             static_cast<DWORD>(readSize), nullptr, &_overlapped);
 
     co_await std::suspend_always{};
 
@@ -76,27 +76,27 @@ CorIO::FileToken::read(std::span<std::byte> buffer) {
   co_return bufferOffset;
 }
 
-wscoro::Task<std::vector<std::byte>>
+wscoro::Task<std::vector<char>>
 CorIO::FileToken::readToEnd() {
   const size_t chunkSize = 1024;
 
   LARGE_INTEGER li;
-  THROW_LAST_ERROR_IF(!GetFileSizeEx(_file, &li));
+  THROW_LAST_ERROR_IF(!GetFileSizeEx(_file.get(), &li));
   auto size = static_cast<size_t>(li.QuadPart);
-  auto buffer = std::vector<std::byte>(size);
+  auto buffer = std::vector<char>(size);
   setOffset(0);
-  co_await read(std::span{&buffer[0], size});
+  size = co_await read(std::span{&buffer[0], size});
+  if (size < buffer.size()) {
+    buffer.resize(size);
+  }
 
   co_return buffer;
 }
 
 wscoro::Task<size_t>
-CorIO::FileToken::write(std::span<const std::byte> buffer) {
+CorIO::FileToken::write(std::span<const char> buffer) {
   const size_t chunkSize = 1024;
 
-  _overlapped.Internal = 0;
-  _overlapped.InternalHigh = 0;
-  _overlapped.hEvent = nullptr;
   _coroutine = co_await wscoro::this_coroutine;
 
   size_t bufferOffset = 0;
@@ -108,7 +108,7 @@ CorIO::FileToken::write(std::span<const std::byte> buffer) {
     _overlapped.Internal = 0;
     _overlapped.InternalHigh = 0;
     _overlapped.hEvent = nullptr;
-    WriteFile(_file, buffer.data() + bufferOffset,
+    WriteFile(_file.get(), buffer.data() + bufferOffset,
               static_cast<DWORD>(writeSize), nullptr, &_overlapped);
 
     co_await std::suspend_always{};
@@ -123,7 +123,7 @@ CorIO::FileToken::write(std::span<const std::byte> buffer) {
 
 void CorIO::registerToken(FileToken &token) {
   THROW_LAST_ERROR_IF_NULL(
-    CreateIoCompletionPort(token._file, _ioCompletionPort.get(),
+    CreateIoCompletionPort(token._file.get(), _ioCompletionPort.get(),
                            reinterpret_cast<ULONG_PTR>(&token), 0)
   );
 }
@@ -143,4 +143,23 @@ CorIO::CorIO(int threads)
 }
 
 CorIO::~CorIO() {
+}
+
+CorIO::FileToken CorIO::openForReading(const wchar_t *path, DWORD flags) {
+  HANDLE file = CreateFile(path, GENERIC_READ, FILE_SHARE_READ, nullptr,
+                           OPEN_EXISTING, flags | FILE_FLAG_OVERLAPPED,
+                           nullptr);
+  return {
+    *this,
+    wil::unique_hfile{file}
+  };
+}
+
+CorIO::FileToken CorIO::openForWriting(const wchar_t *path, DWORD flags) {
+  HANDLE file = CreateFile(path, GENERIC_WRITE, 0, nullptr, OPEN_ALWAYS,
+                           flags | FILE_FLAG_OVERLAPPED, nullptr);
+  return {
+    *this,
+    wil::unique_hfile{file}
+  };
 }
