@@ -8,11 +8,12 @@ using namespace wsudo;
 void CorIO::listener() noexcept {
   DWORD bytes;
   LPOVERLAPPED overlapped;
-  ULONG_PTR completionKey;
+  CompletionKey *key;
 
   while (true) {
     if (!GetQueuedCompletionStatus(_ioCompletionPort.get(), &bytes,
-                                   &completionKey, &overlapped, 0)) {
+                                   reinterpret_cast<PULONG_PTR>(&key),
+                                   &overlapped, 0)) {
       if (!overlapped) {
         if (GetLastError() == ERROR_ABANDONED_WAIT_0) {
           // Completion port closed.
@@ -34,50 +35,49 @@ void CorIO::listener() noexcept {
       }
     }
 
-    auto token = reinterpret_cast<FileToken *>(completionKey);
-    token->addOffset(static_cast<size_t>(bytes));
-    token->_coroutine.resume();
+    auto coroutine = key->coroutine;
+    key->bytesTransferred = bytes;
+    coroutine.resume();
   }
 }
 
-CorIO::FileToken::FileToken(CorIO &corio, wil::unique_hfile file)
-  : _file{std::move(file)}, _overlapped{}, _coroutine{}
+CorIO::AsyncFile::AsyncFile(CorIO &corio, wil::unique_hfile file)
+  : _file{std::move(file)}, _overlapped{}, _key{}
 {
-  corio.registerToken(*this);
+  corio.registerFile(*this);
 }
 
 wscoro::Task<size_t>
-CorIO::FileToken::read(std::span<char> buffer) {
+CorIO::AsyncFile::read(std::span<char> buffer) {
   const size_t chunkSize = 1024;
 
-  _coroutine = co_await wscoro::this_coroutine;
+  auto this_coro = co_await wscoro::this_coroutine;
 
   size_t bufferOffset = 0;
   while (bufferOffset < buffer.size()) {
     auto remaining = buffer.size() - bufferOffset;
     auto readSize = remaining > chunkSize ?  chunkSize : remaining;
-    auto prevOffset = offset();
 
     _overlapped.Internal = 0;
     _overlapped.InternalHigh = 0;
     _overlapped.hEvent = nullptr;
+    _key.coroutine = this_coro;
     ReadFile(_file.get(), buffer.data() + bufferOffset,
              static_cast<DWORD>(readSize), nullptr, &_overlapped);
-
     co_await std::suspend_always{};
 
-    readSize = offset() - prevOffset;
-    if (readSize == 0) {
+    if (_key.bytesTransferred == 0) {
       break;
     }
-    bufferOffset += readSize;
+    addOffset((size_t)_key.bytesTransferred);
+    bufferOffset += _key.bytesTransferred;
   }
 
   co_return bufferOffset;
 }
 
 wscoro::Task<std::vector<char>>
-CorIO::FileToken::readToEnd() {
+CorIO::AsyncFile::readToEnd() {
   const size_t chunkSize = 1024;
 
   LARGE_INTEGER li;
@@ -94,37 +94,36 @@ CorIO::FileToken::readToEnd() {
 }
 
 wscoro::Task<size_t>
-CorIO::FileToken::write(std::span<const char> buffer) {
+CorIO::AsyncFile::write(std::span<const char> buffer) {
   const size_t chunkSize = 1024;
 
-  _coroutine = co_await wscoro::this_coroutine;
+  auto this_coro = co_await wscoro::this_coroutine;
 
   size_t bufferOffset = 0;
   while (bufferOffset < buffer.size()) {
     auto remaining = buffer.size() - bufferOffset;
     auto writeSize = remaining > chunkSize ?  chunkSize : remaining;
-    auto prevOffset = offset();
 
     _overlapped.Internal = 0;
     _overlapped.InternalHigh = 0;
     _overlapped.hEvent = nullptr;
+    _key.coroutine = this_coro;
     WriteFile(_file.get(), buffer.data() + bufferOffset,
               static_cast<DWORD>(writeSize), nullptr, &_overlapped);
-
     co_await std::suspend_always{};
 
-    writeSize = offset() - prevOffset;
     THROW_LAST_ERROR_IF(writeSize == 0);
-    bufferOffset += writeSize;
+    addOffset((size_t)_key.bytesTransferred);
+    bufferOffset += _key.bytesTransferred;
   }
 
   co_return bufferOffset;
 }
 
-void CorIO::registerToken(FileToken &token) {
+void CorIO::registerFile(AsyncFile &file) {
   THROW_LAST_ERROR_IF_NULL(
-    CreateIoCompletionPort(token._file.get(), _ioCompletionPort.get(),
-                           reinterpret_cast<ULONG_PTR>(&token), 0)
+    CreateIoCompletionPort(file._file.get(), _ioCompletionPort.get(),
+                           reinterpret_cast<ULONG_PTR>(&file._key), 0)
   );
 }
 
@@ -145,7 +144,17 @@ CorIO::CorIO(int threads)
 CorIO::~CorIO() {
 }
 
-CorIO::FileToken CorIO::openForReading(const wchar_t *path, DWORD flags) {
+wscoro::Task<DWORD> CorIO::postMessage(DWORD bytesTransferred) {
+  CompletionKey key{co_await wscoro::this_coroutine};
+  THROW_LAST_ERROR_IF(
+    !PostQueuedCompletionStatus(_ioCompletionPort.get(), bytesTransferred,
+                                reinterpret_cast<ULONG_PTR>(&key), nullptr)
+  );
+  co_await std::suspend_always{};
+  co_return key.bytesTransferred;
+}
+
+CorIO::AsyncFile CorIO::openForReading(const wchar_t *path, DWORD flags) {
   HANDLE file = CreateFile(path, GENERIC_READ, FILE_SHARE_READ, nullptr,
                            OPEN_EXISTING, flags | FILE_FLAG_OVERLAPPED,
                            nullptr);
@@ -155,7 +164,7 @@ CorIO::FileToken CorIO::openForReading(const wchar_t *path, DWORD flags) {
   };
 }
 
-CorIO::FileToken CorIO::openForWriting(const wchar_t *path, DWORD flags) {
+CorIO::AsyncFile CorIO::openForWriting(const wchar_t *path, DWORD flags) {
   HANDLE file = CreateFile(path, GENERIC_WRITE, 0, nullptr, OPEN_ALWAYS,
                            flags | FILE_FLAG_OVERLAPPED, nullptr);
   return {

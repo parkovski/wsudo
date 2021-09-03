@@ -12,9 +12,9 @@ TEST_CASE("Coroutine IO", "[corio]") {
   constexpr size_t gpl3_size_crlf = 35823;
 
   CorIO corio;
-  auto fileToken = corio.openForReading(gpl3_path, FILE_FLAG_SEQUENTIAL_SCAN);
+  auto file = corio.openForReading(gpl3_path, FILE_FLAG_SEQUENTIAL_SCAN);
 
-  auto task = fileToken.readToEnd();
+  auto task = file.readToEnd();
   task.resume();
   int waitCycles = 0;
   while (!task.await_ready()) {
