@@ -17,3 +17,4 @@ set(SERVER_SRC
 )
 list(TRANSFORM SERVER_SRC PREPEND "server/")
 add_library(wsudo-server STATIC ${SERVER_SRC})
+target_link_libraries(wsudo-server INTERFACE wsudo-corio)

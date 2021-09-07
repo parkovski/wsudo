@@ -2,6 +2,7 @@
 #include <wil/win32_helpers.h>
 
 #include <thread>
+#include <vector>
 
 using namespace wsudo;
 
@@ -22,6 +23,8 @@ void CorIO::listener() noexcept {
           // No packet was dequeued.
           continue;
         }
+      } else if (overlapped == _quitFlag) {
+        return;
       } else {
         switch (GetLastError()) {
           case ERROR_HANDLE_EOF:
@@ -127,31 +130,60 @@ void CorIO::registerFile(AsyncFile &file) {
   );
 }
 
-CorIO::CorIO(int threads)
-  : _ioCompletionPort{CreateIoCompletionPort(INVALID_HANDLE_VALUE, nullptr, 0,
-                                             0)} {
+static int threadsOrDefault(int nThreads) {
+  if (nThreads <= 0) {
+    SYSTEM_INFO info;
+    GetSystemInfo(&info);
+    return static_cast<int>(info.dwNumberOfProcessors);
+  }
+  return nThreads;
+}
+
+CorIO::CorIO(int nThreads)
+  : _ioCompletionPort{
+      CreateIoCompletionPort(INVALID_HANDLE_VALUE, nullptr, 0, 0)
+    },
+    _nThreads{threadsOrDefault(nThreads)}
+{
   THROW_LAST_ERROR_IF_NULL(_ioCompletionPort.get());
-  if (threads <= 0) {
-    threads = 1;
-  }
-  for (int i = 0; i < threads; ++i) {
-    std::thread{[this] () {
-      this->listener();
-    }}.detach();
-  }
 }
 
 CorIO::~CorIO() {
 }
 
-wscoro::Task<DWORD> CorIO::postMessage(DWORD bytesTransferred) {
+int CorIO::operator()() {
+  auto runListener = [this] () { this->listener(); };
+  std::vector<std::thread> threads;
+  threads.reserve(_nThreads);
+  for (int i = 0; i < _nThreads; ++i) {
+    threads.emplace_back(std::thread{runListener});
+  }
+
+  for (int i = 0; i < _nThreads; ++i) {
+    threads[i].join();
+  }
+
+  return 0;
+}
+
+#if 0
+wscoro::Task<DWORD> CorIO::postMessage(DWORD dwParam, void *pParam) {
   CompletionKey key{co_await wscoro::this_coroutine};
   THROW_LAST_ERROR_IF(
-    !PostQueuedCompletionStatus(_ioCompletionPort.get(), bytesTransferred,
-                                reinterpret_cast<ULONG_PTR>(&key), nullptr)
+    !PostQueuedCompletionStatus(_ioCompletionPort.get(), dwParam,
+                                reinterpret_cast<ULONG_PTR>(&key),
+                                static_cast<LPOVERLAPPED>(pParam))
   );
   co_await std::suspend_always{};
   co_return key.bytesTransferred;
+}
+#endif
+
+void CorIO::postQuitMessage(int exitCode) {
+  for (int i = 0; i < _nThreads; ++i) {
+    PostQueuedCompletionStatus(_ioCompletionPort.get(), exitCode, 0,
+                               _quitFlag);
+  }
 }
 
 CorIO::AsyncFile CorIO::openForReading(const wchar_t *path, DWORD flags) {

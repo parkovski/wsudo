@@ -1,5 +1,6 @@
 #include "wsudo/server.h"
 #include "wsudo/session.h"
+#include "wsudo/corio.h"
 
 #pragma comment(lib, "Advapi32.lib")
 
@@ -38,3 +39,7 @@ void wsudo::server::serverMain(Config &config) {
   }
 }
 
+Status Server::operator()(int threads) {
+  CorIO corio(threads);
+  return StatusOk;
+}

@@ -122,5 +122,24 @@ void serverMain(Config &config);
 
 } // namespace wsudo::server
 
-#endif // WSUDO_SERVER_H
+namespace wsudo {
 
+using namespace server;
+
+class Server {
+  std::wstring _pipeName;
+  HANDLE *_quitEvent;
+
+public:
+  explicit Server(std::wstring pipeName, HANDLE *quitEvent)
+    noexcept
+    : _pipeName{std::move(pipeName)},
+      _quitEvent{quitEvent}
+  {}
+
+  Status operator()(int threads = 0);
+};
+
+} // namespace wsudo
+
+#endif // WSUDO_SERVER_H

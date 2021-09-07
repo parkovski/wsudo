@@ -12,7 +12,9 @@
 namespace wsudo {
 
 class CorIO {
+  constexpr static LPOVERLAPPED _quitFlag = (LPOVERLAPPED)(size_t)(-1);
   wil::unique_handle _ioCompletionPort;
+  int _nThreads;
 
   void listener() noexcept;
 
@@ -48,7 +50,7 @@ public:
 
     size_t setOffset(size_t offset) noexcept {
       _overlapped.Pointer = reinterpret_cast<void *>(offset);
-      return reinterpret_cast<size_t>(_overlapped.Pointer);
+      return offset;
     }
 
     size_t addOffset(size_t offset) noexcept {
@@ -76,7 +78,7 @@ private:
   void registerFile(AsyncFile &file);
 
 public:
-  explicit CorIO(int threads = 0);
+  explicit CorIO(int nThreads = 0);
   ~CorIO();
 
   CorIO(const CorIO &) = delete;
@@ -85,7 +87,10 @@ public:
   CorIO(CorIO &&) = default;
   CorIO &operator=(CorIO &&) = default;
 
-  wscoro::Task<DWORD> postMessage(DWORD bytesTransferred = 0);
+  int operator()();
+
+  //wscoro::Task<> postMessage();
+  void postQuitMessage(int exitCode);
 
   // Moves ownership of fileHandle into the returned AsyncFile. The file is
   // registered with the associated IO completion port. fileHandle must have
