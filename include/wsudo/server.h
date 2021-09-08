@@ -5,11 +5,15 @@
 #include "events.h"
 #include "session.h"
 
+#include "wscoro/basictasks.h"
+
 #include <memory>
 #include <type_traits>
 #include <vector>
 #include <string_view>
 #include <AclAPI.h>
+
+#include <wil/resource.h>
 
 namespace wsudo::server {
 
@@ -128,16 +132,31 @@ using namespace server;
 
 class Server {
   std::wstring _pipeName;
-  HANDLE *_quitEvent;
+  wil::unique_hfile _pipe;
+
+  // Security
+  wil::unique_sid _sid;
+  wil::unique_hlocal_ptr<ACL> _acl;
+  wil::unique_hlocal_ptr<SECURITY_DESCRIPTOR> _securityDescriptor;
+  SECURITY_ATTRIBUTES _securityAttributes;
+
+  void initSecurity();
+  void initPipe();
 
 public:
-  explicit Server(std::wstring pipeName, HANDLE *quitEvent)
-    noexcept
-    : _pipeName{std::move(pipeName)},
-      _quitEvent{quitEvent}
-  {}
+  explicit Server(std::wstring pipeName);
 
   Status operator()(int threads = 0);
+
+  class Connection {
+    Server *_server;
+    wil::unique_hfile _pipe;
+    OVERLAPPED _overlapped;
+
+  public:
+    wscoro::Task<std::string> read();
+    wscoro::Task<> write(std::string_view message);
+  };
 };
 
 } // namespace wsudo
