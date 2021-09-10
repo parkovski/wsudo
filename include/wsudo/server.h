@@ -131,32 +131,29 @@ namespace wsudo {
 using namespace server;
 
 class Server {
-  std::wstring _pipeName;
-  wil::unique_hfile _pipe;
-
   // Security
   wil::unique_sid _sid;
   wil::unique_hlocal_ptr<ACL> _acl;
   wil::unique_hlocal_ptr<SECURITY_DESCRIPTOR> _securityDescriptor;
   SECURITY_ATTRIBUTES _securityAttributes;
 
-  void initSecurity();
-  void initPipe();
+  std::wstring _pipeName;
+
+  int _activeConnections = 0;
+  void *_quitHandle = nullptr;
+
+  HRESULT initSecurity() noexcept;
+  HANDLE initPipe(bool first = false);
 
 public:
+  struct Options {
+    bool useConnectionBootstrap = false;
+  } options;
+
   explicit Server(std::wstring pipeName);
 
-  Status operator()(int threads = 0);
-
-  class Connection {
-    Server *_server;
-    wil::unique_hfile _pipe;
-    OVERLAPPED _overlapped;
-
-  public:
-    wscoro::Task<std::string> read();
-    wscoro::Task<> write(std::string_view message);
-  };
+  HRESULT operator()(int nUserThreads = 0, int nSystemThreads = 0);
+  void quit();
 };
 
 } // namespace wsudo

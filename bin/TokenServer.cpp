@@ -12,6 +12,7 @@
 using namespace wsudo;
 
 static HANDLE gs_quitEventHandle = nullptr;
+static Server *g_server = nullptr;
 BOOL WINAPI consoleControlHandler(DWORD event) {
   const char *eventName;
   switch (event) {
@@ -35,6 +36,11 @@ BOOL WINAPI consoleControlHandler(DWORD event) {
   }
 
   log::info("Received {} event, quitting.", eventName);
+  if (g_server) {
+    g_server->quit();
+    g_server = nullptr;
+    return true;
+  }
   if (!gs_quitEventHandle || !SetEvent(gs_quitEventHandle)) {
     log::warn("Can't notify server thread; forcing shutdown.");
     std::terminate();
@@ -52,10 +58,10 @@ int wmain(int argc, wchar_t *argv[]) {
   log::g_errLogger->set_level(spdlog::level::warn);
 #ifndef NDEBUG
   // Set a more compact, readable log format for debugging.
-  spdlog::set_pattern("\033[90m[%T.%e]\033[m %^[%l]%$ %v");
+  spdlog::set_pattern("\033[90m[%T.%e]\033[m (#%5t) %^[%5l]%$ %v");
 #else
   // Use a complete format for release mode.
-  spdlog::set_pattern("[%Y-%m-%d %T.%e] %^[%l]%$ %v");
+  spdlog::set_pattern("[%Y-%m-%d %T.%e] %^[%5l]%$ %v");
 #endif
 
   // VC++ deadlock bug
@@ -72,6 +78,12 @@ int wmain(int argc, wchar_t *argv[]) {
                  ENABLE_PROCESSED_OUTPUT | ENABLE_WRAP_AT_EOL_OUTPUT |
                  ENABLE_VIRTUAL_TERMINAL_PROCESSING);
 
+  // Restore console modes on exit.
+  WSUDO_SCOPEEXIT {
+    SetConsoleMode(hStdin, stdinMode);
+    SetConsoleMode(hStdout, stdoutMode);
+  };
+
   log::info("WSudo Token Server: Pid = {}.", GetCurrentProcessId());
 
   // Clear control handlers and then set ours.
@@ -83,11 +95,16 @@ int wmain(int argc, wchar_t *argv[]) {
     log::info("Starting server. Press Ctrl-C to exit.");
   }
 
-  // Restore console modes on exit.
-  WSUDO_SCOPEEXIT {
-    SetConsoleMode(hStdin, stdinMode);
-    SetConsoleMode(hStdout, stdoutMode);
-  };
+  if (argc >= 2 && argv[1][0] == L'-' && argv[1][1] == L'2' && argv[1][2] == 0) {
+    log::debug("Using CorIO server.");
+    Server server{PipeFullPath};
+    g_server = &server;
+    if (argc > 2 && argv[2][0] == L'-' && argv[2][1] == L'b' && argv[2][2] == 0) {
+      server.options.useConnectionBootstrap = true;
+    }
+    server(2);
+    return 0;
+  }
 
   server::Config config{ PipeFullPath, &gs_quitEventHandle };
   std::thread serverThread{&server::serverMain, std::ref(config)};

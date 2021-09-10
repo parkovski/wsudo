@@ -1,5 +1,6 @@
+#include "wsudo/wsudo.h"
 #include "wsudo/corio.h"
-#include <wil/win32_helpers.h>
+#include <wil/result.h>
 
 #include <thread>
 #include <vector>
@@ -12,35 +13,50 @@ void CorIO::listener() noexcept {
   CompletionKey *key;
 
   while (true) {
+    log::trace("Waiting on completion port.");
     if (!GetQueuedCompletionStatus(_ioCompletionPort.get(), &bytes,
                                    reinterpret_cast<PULONG_PTR>(&key),
-                                   &overlapped, 0)) {
+                                   &overlapped, INFINITE)) {
       if (!overlapped) {
         if (GetLastError() == ERROR_ABANDONED_WAIT_0) {
+          log::debug("Port closed.");
           // Completion port closed.
           return;
         } else {
           // No packet was dequeued.
+          log::debug("No overlapped, err={}.", lastErrorString());
           continue;
         }
-      } else if (overlapped == _quitFlag) {
-        return;
       } else {
         switch (GetLastError()) {
+          case ERROR_SUCCESS:
+            log::debug("Success.");
+            break;
+
           case ERROR_HANDLE_EOF:
+            log::debug("EOF.");
             // IO done.
             break;
 
           default:
+            log::debug("Overlapped, err={}.", lastErrorString());
             // Other IO error.
             break;
         }
       }
+    } else if (overlapped == _quitFlag) {
+      log::debug("Quit message ec={}.", bytes);
+      return;
     }
 
     auto coroutine = key->coroutine;
     key->bytesTransferred = bytes;
-    coroutine.resume();
+    log::debug("{} bytes transferred; resuming coroutine.", bytes);
+    try {
+      coroutine.resume();
+    } catch (std::exception &e) {
+      log::error("Exception in IO thread: {}", e.what());
+    }
   }
 }
 
@@ -50,77 +66,76 @@ CorIO::AsyncFile::AsyncFile(CorIO &corio, wil::unique_hfile file)
   corio.registerFile(*this);
 }
 
-wscoro::Task<size_t>
-CorIO::AsyncFile::read(std::span<char> buffer) {
-  const size_t chunkSize = 1024;
-
+wscoro::Task<bool>
+CorIO::AsyncFile::readToEnd(std::string &buffer) {
+  const size_t chunkSize = 8;
+  char chunk[chunkSize];
   auto this_coro = co_await wscoro::this_coroutine;
 
-  size_t bufferOffset = 0;
-  while (bufferOffset < buffer.size()) {
-    auto remaining = buffer.size() - bufferOffset;
-    auto readSize = remaining > chunkSize ?  chunkSize : remaining;
-
-    _overlapped.Internal = 0;
-    _overlapped.InternalHigh = 0;
-    _overlapped.hEvent = nullptr;
+  while (true) {
     _key.coroutine = this_coro;
-    ReadFile(_file.get(), buffer.data() + bufferOffset,
-             static_cast<DWORD>(readSize), nullptr, &_overlapped);
+    prepareOverlapped();
+    ReadFile(_file.get(), chunk, chunkSize, nullptr, &_overlapped);
     co_await std::suspend_always{};
 
-    if (_key.bytesTransferred == 0) {
-      break;
+    DWORD bytes;
+    if (GetOverlappedResult(_file.get(), &_overlapped, &bytes, false)) {
+      log::trace("Read finished with {} bytes.", bytes);
+      buffer.append(chunk, chunk + bytes);
+      co_return true;
     }
-    addOffset((size_t)_key.bytesTransferred);
-    bufferOffset += _key.bytesTransferred;
-  }
 
-  co_return bufferOffset;
+    auto err = GetLastError();
+    if (err == ERROR_MORE_DATA) {
+      buffer.append(chunk, chunk + bytes);
+      addOffset((size_t)bytes);
+      continue;
+    } else if (err == ERROR_BROKEN_PIPE) {
+      log::warn("Pipe disconnected by client.");
+      co_return false;
+    }
+
+    log::error("GetOverlappedResult failed: 0x{:X} {}", err,
+                lastErrorString(err));
+    THROW_WIN32(err);
+  }
 }
 
-wscoro::Task<std::vector<char>>
-CorIO::AsyncFile::readToEnd() {
-  const size_t chunkSize = 1024;
-
-  LARGE_INTEGER li;
-  THROW_LAST_ERROR_IF(!GetFileSizeEx(_file.get(), &li));
-  auto size = static_cast<size_t>(li.QuadPart);
-  auto buffer = std::vector<char>(size);
-  setOffset(0);
-  size = co_await read(std::span{&buffer[0], size});
-  if (size < buffer.size()) {
-    buffer.resize(size);
-  }
-
-  co_return buffer;
-}
-
-wscoro::Task<size_t>
+wscoro::Task<bool>
 CorIO::AsyncFile::write(std::span<const char> buffer) {
-  const size_t chunkSize = 1024;
-
   auto this_coro = co_await wscoro::this_coroutine;
 
   size_t bufferOffset = 0;
   while (bufferOffset < buffer.size()) {
     auto remaining = buffer.size() - bufferOffset;
-    auto writeSize = remaining > chunkSize ?  chunkSize : remaining;
+    assert(remaining < (size_t)std::numeric_limits<DWORD>::max());
 
-    _overlapped.Internal = 0;
-    _overlapped.InternalHigh = 0;
-    _overlapped.hEvent = nullptr;
     _key.coroutine = this_coro;
+    prepareOverlapped();
     WriteFile(_file.get(), buffer.data() + bufferOffset,
-              static_cast<DWORD>(writeSize), nullptr, &_overlapped);
+              static_cast<DWORD>(remaining), nullptr, &_overlapped);
     co_await std::suspend_always{};
 
-    THROW_LAST_ERROR_IF(writeSize == 0);
-    addOffset((size_t)_key.bytesTransferred);
-    bufferOffset += _key.bytesTransferred;
-  }
+    DWORD bytes;
+    if (GetOverlappedResult(_file.get(), &_overlapped, &bytes, false)) {
+      log::trace("Write finished with {} bytes.", bytes);
+      co_return true;
+    }
 
-  co_return bufferOffset;
+    auto err = GetLastError();
+    if (err == ERROR_MORE_DATA) {
+      bufferOffset += bytes;
+      addOffset((size_t)bytes);
+      continue;
+    } else if (err == ERROR_BROKEN_PIPE) {
+      log::warn("Pipe disconnected by client.");
+      co_return false;
+    }
+
+    log::error("GetOverlappedResult failed: 0x{:X} {}", err,
+                lastErrorString(err));
+    THROW_WIN32(err);
+  }
 }
 
 void CorIO::registerFile(AsyncFile &file) {
@@ -128,59 +143,58 @@ void CorIO::registerFile(AsyncFile &file) {
     CreateIoCompletionPort(file._file.get(), _ioCompletionPort.get(),
                            reinterpret_cast<ULONG_PTR>(&file._key), 0)
   );
+  log::trace("CorIO registered file.");
 }
 
-static int threadsOrDefault(int nThreads) {
-  if (nThreads <= 0) {
-    SYSTEM_INFO info;
-    GetSystemInfo(&info);
-    return static_cast<int>(info.dwNumberOfProcessors);
-  }
-  return nThreads;
-}
-
-CorIO::CorIO(int nThreads)
+CorIO::CorIO(int nSystemThreads)
   : _ioCompletionPort{
-      CreateIoCompletionPort(INVALID_HANDLE_VALUE, nullptr, 0, 0)
-    },
-    _nThreads{threadsOrDefault(nThreads)}
+      CreateIoCompletionPort(INVALID_HANDLE_VALUE, nullptr, 0,
+                             static_cast<DWORD>(nSystemThreads))
+    }
 {
   THROW_LAST_ERROR_IF_NULL(_ioCompletionPort.get());
 }
 
 CorIO::~CorIO() {
+  wait();
 }
 
-int CorIO::operator()() {
+void CorIO::run(int nUserThreads) {
   auto runListener = [this] () { this->listener(); };
-  std::vector<std::thread> threads;
-  threads.reserve(_nThreads);
-  for (int i = 0; i < _nThreads; ++i) {
-    threads.emplace_back(std::thread{runListener});
+  if (nUserThreads <= 0) {
+    SYSTEM_INFO info;
+    GetSystemInfo(&info);
+    nUserThreads = static_cast<int>(info.dwNumberOfProcessors);
   }
+  _threads.reserve(nUserThreads);
+  for (int i = 0; i < nUserThreads; ++i) {
+    _threads.emplace_back(std::thread{runListener});
+  }
+}
 
-  for (int i = 0; i < _nThreads; ++i) {
-    threads[i].join();
+int CorIO::wait() {
+  for (auto &thread : _threads) {
+    if (thread.joinable()) {
+      thread.join();
+    }
   }
 
   return 0;
 }
 
-#if 0
-wscoro::Task<DWORD> CorIO::postMessage(DWORD dwParam, void *pParam) {
+wscoro::Task<> CorIO::enterIOThread() {
+  log::trace("CorIO will enter IO thread.");
   CompletionKey key{co_await wscoro::this_coroutine};
   THROW_LAST_ERROR_IF(
-    !PostQueuedCompletionStatus(_ioCompletionPort.get(), dwParam,
-                                reinterpret_cast<ULONG_PTR>(&key),
-                                static_cast<LPOVERLAPPED>(pParam))
+    !PostQueuedCompletionStatus(_ioCompletionPort.get(), 0,
+                                reinterpret_cast<ULONG_PTR>(&key), nullptr)
   );
   co_await std::suspend_always{};
-  co_return key.bytesTransferred;
+  log::trace("CorIO entered IO thread.");
 }
-#endif
 
 void CorIO::postQuitMessage(int exitCode) {
-  for (int i = 0; i < _nThreads; ++i) {
+  for (int i = 0; i < _threads.size(); ++i) {
     PostQueuedCompletionStatus(_ioCompletionPort.get(), exitCode, 0,
                                _quitFlag);
   }
