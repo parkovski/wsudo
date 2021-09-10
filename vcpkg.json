@@ -1,0 +1,12 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg/master/scripts/vcpkg.schema.json",
+  "name": "wsudo",
+  "version-string": "0.1-alpha",
+  "dependencies": [
+    "fmt",
+    "spdlog",
+    "wil"
+  ],
+  "$get-this-yourself": "https://github.com/parkovski/wscoro",
+  "$required-for-tests": "catch2 v3"
+}
