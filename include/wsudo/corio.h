@@ -82,14 +82,12 @@ public:
     /// Write the contents of `buffer` to the file.
     /// \return True if the file is still good, false if the handle is no longer
     /// valid (disconnected pipe).
-    /// \throws wil::ResultException
-    wscoro::Task<bool> write(std::span<const char> buffer);
+    wscoro::Task<bool> write(std::span<const char> buffer) noexcept;
 
     /// Read the entire contents of the file into `buffer`.
     /// \return True if the file is still good, false if the handle is no longer
     /// valid (disconnected pipe).
-    /// \throws wil::ResultException
-    wscoro::Task<bool> readToEnd(std::string &buffer);
+    wscoro::Task<bool> readToEnd(std::string &buffer) noexcept;
 
     wscoro::Task<std::string> readToEnd() {
       std::string buffer;

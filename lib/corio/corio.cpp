@@ -13,49 +13,50 @@ void CorIO::listener() noexcept {
   CompletionKey *key;
 
   while (true) {
-    log::trace("Waiting on completion port.");
+    log::trace("IOCP waiting on completion port.");
     if (!GetQueuedCompletionStatus(_ioCompletionPort.get(), &bytes,
                                    reinterpret_cast<PULONG_PTR>(&key),
                                    &overlapped, INFINITE)) {
+      auto err = GetLastError();
       if (!overlapped) {
-        if (GetLastError() == ERROR_ABANDONED_WAIT_0) {
-          log::debug("Port closed.");
+        if (err == ERROR_ABANDONED_WAIT_0) {
           // Completion port closed.
+          log::error("IOCP port closed unexpectedly.");
           return;
         } else {
           // No packet was dequeued.
-          log::debug("No overlapped, err={}.", lastErrorString());
+          log::warn("IOCP missing packet, err=0x{:X} {}", err,
+                    lastErrorString(err));
           continue;
         }
       } else {
-        switch (GetLastError()) {
-          case ERROR_SUCCESS:
-            log::debug("Success.");
+        switch (err) {
+          case ERROR_HANDLE_EOF:
+            log::trace("IOCP Dequeued EOF.");
             break;
 
-          case ERROR_HANDLE_EOF:
-            log::debug("EOF.");
-            // IO done.
+          case ERROR_MORE_DATA:
+            log::trace("IOCP more data pending.");
             break;
 
           default:
-            log::debug("Overlapped, err={}.", lastErrorString());
             // Other IO error.
-            break;
+            log::error("IOCP err=0x{:X} {}", err, lastErrorString(err));
+            return;
         }
       }
     } else if (overlapped == _quitFlag) {
-      log::debug("Quit message ec={}.", bytes);
+      log::debug("IOCP quit message, exitCode={}.", bytes);
       return;
     }
 
     auto coroutine = key->coroutine;
     key->bytesTransferred = bytes;
-    log::debug("{} bytes transferred; resuming coroutine.", bytes);
+    log::debug("IOCP {} bytes transferred; resuming coroutine.", bytes);
     try {
       coroutine.resume();
     } catch (std::exception &e) {
-      log::error("Exception in IO thread: {}", e.what());
+      log::error("IOCP exception in coroutine: {}", e.what());
     }
   }
 }
@@ -67,7 +68,7 @@ CorIO::AsyncFile::AsyncFile(CorIO &corio, wil::unique_hfile file)
 }
 
 wscoro::Task<bool>
-CorIO::AsyncFile::readToEnd(std::string &buffer) {
+CorIO::AsyncFile::readToEnd(std::string &buffer) noexcept {
   const size_t chunkSize = 8;
   char chunk[chunkSize];
   auto this_coro = co_await wscoro::this_coroutine;
@@ -75,12 +76,13 @@ CorIO::AsyncFile::readToEnd(std::string &buffer) {
   while (true) {
     _key.coroutine = this_coro;
     prepareOverlapped();
+    log::trace("CorIO begin read.");
     ReadFile(_file.get(), chunk, chunkSize, nullptr, &_overlapped);
     co_await std::suspend_always{};
 
     DWORD bytes;
     if (GetOverlappedResult(_file.get(), &_overlapped, &bytes, false)) {
-      log::trace("Read finished with {} bytes.", bytes);
+      log::trace("CorIO read finished with {} bytes.", bytes);
       buffer.append(chunk, chunk + bytes);
       co_return true;
     }
@@ -91,18 +93,18 @@ CorIO::AsyncFile::readToEnd(std::string &buffer) {
       addOffset((size_t)bytes);
       continue;
     } else if (err == ERROR_BROKEN_PIPE) {
-      log::warn("Pipe disconnected by client.");
+      log::warn("CorIO pipe disconnected by client.");
       co_return false;
     }
 
-    log::error("GetOverlappedResult failed: 0x{:X} {}", err,
+    log::error("CorIO GetOverlappedResult failed: 0x{:X} {}", err,
                 lastErrorString(err));
-    THROW_WIN32(err);
+    co_return false;
   }
 }
 
 wscoro::Task<bool>
-CorIO::AsyncFile::write(std::span<const char> buffer) {
+CorIO::AsyncFile::write(std::span<const char> buffer) noexcept {
   auto this_coro = co_await wscoro::this_coroutine;
 
   size_t bufferOffset = 0;
@@ -112,13 +114,14 @@ CorIO::AsyncFile::write(std::span<const char> buffer) {
 
     _key.coroutine = this_coro;
     prepareOverlapped();
+    log::trace("CorIO begin write.");
     WriteFile(_file.get(), buffer.data() + bufferOffset,
               static_cast<DWORD>(remaining), nullptr, &_overlapped);
     co_await std::suspend_always{};
 
     DWORD bytes;
     if (GetOverlappedResult(_file.get(), &_overlapped, &bytes, false)) {
-      log::trace("Write finished with {} bytes.", bytes);
+      log::trace("CorIO write finished with {} bytes.", bytes);
       co_return true;
     }
 
@@ -128,13 +131,13 @@ CorIO::AsyncFile::write(std::span<const char> buffer) {
       addOffset((size_t)bytes);
       continue;
     } else if (err == ERROR_BROKEN_PIPE) {
-      log::warn("Pipe disconnected by client.");
+      log::warn("CorIO pipe disconnected by client.");
       co_return false;
     }
 
-    log::error("GetOverlappedResult failed: 0x{:X} {}", err,
+    log::error("CorIO GetOverlappedResult failed: 0x{:X} {}", err,
                 lastErrorString(err));
-    THROW_WIN32(err);
+    co_return false;
   }
 }
 
@@ -156,6 +159,7 @@ CorIO::CorIO(int nSystemThreads)
 }
 
 CorIO::~CorIO() {
+  log::trace("CorIO finish.");
   wait();
 }
 
@@ -166,6 +170,7 @@ void CorIO::run(int nUserThreads) {
     GetSystemInfo(&info);
     nUserThreads = static_cast<int>(info.dwNumberOfProcessors);
   }
+  log::debug("CorIO starting {} threads.", nUserThreads);
   _threads.reserve(nUserThreads);
   for (int i = 0; i < nUserThreads; ++i) {
     _threads.emplace_back(std::thread{runListener});
@@ -173,11 +178,19 @@ void CorIO::run(int nUserThreads) {
 }
 
 int CorIO::wait() {
+  if (!_threads.size()) {
+    return -1;
+  }
+
+  log::debug("CorIO wait for {} threads.", _threads.size());
   for (auto &thread : _threads) {
     if (thread.joinable()) {
       thread.join();
     }
   }
+  log::trace("CorIO wait finished.");
+
+  _threads.clear();
 
   return 0;
 }
@@ -185,10 +198,13 @@ int CorIO::wait() {
 wscoro::Task<> CorIO::enterIOThread() {
   log::trace("CorIO will enter IO thread.");
   CompletionKey key{co_await wscoro::this_coroutine};
-  THROW_LAST_ERROR_IF(
-    !PostQueuedCompletionStatus(_ioCompletionPort.get(), 0,
-                                reinterpret_cast<ULONG_PTR>(&key), nullptr)
-  );
+  if(!PostQueuedCompletionStatus(_ioCompletionPort.get(), 0,
+                                 reinterpret_cast<ULONG_PTR>(&key), nullptr)) {
+    auto err = GetLastError();
+    log::error("CorIO PostQueuedCompletionStatus failed: 0x{:X} {}", err,
+               lastErrorString(err));
+    co_return;
+  }
   co_await std::suspend_always{};
   log::trace("CorIO entered IO thread.");
 }

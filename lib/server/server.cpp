@@ -79,7 +79,7 @@ HRESULT Server::initSecurity() noexcept {
   _securityAttributes.bInheritHandle = false;
   _securityAttributes.lpSecurityDescriptor = _securityDescriptor.get();
 
-  log::trace("Created pipe security attributes");
+  log::trace("Server created pipe security attributes");
 
   return S_OK;
 }
@@ -101,7 +101,7 @@ HANDLE Server::initPipe(bool first) {
     &_securityAttributes
   );
   THROW_LAST_ERROR_IF(pipe == INVALID_HANDLE_VALUE);
-  log::trace("Created {}pipe handle", first ? "first " : "");
+  log::trace("Server created {}pipe handle", first ? "first " : "");
   return pipe;
 }
 
@@ -176,23 +176,25 @@ wscoro::Task<bool> Connection::connect(Bootstrap &bootstrap) {
   _overlapped.hEvent = reinterpret_cast<HANDLE>(1 | reinterpret_cast<size_t>(
     bootstrap.prepare(co_await wscoro::this_coroutine)
   ));
+  log::trace("ServerConnection connect to pipe.");
   if (ConnectNamedPipe(_file.get(), &_overlapped)) {
-    log::trace("Pipe connected synchronously.");
+    log::trace("ServerConnection pipe connected synchronously.");
     SetEvent(_overlapped.hEvent);
   } else {
     auto err = GetLastError();
     switch (err) {
       case ERROR_IO_PENDING:
-        log::trace("Waiting for pipe connection.");
+        log::trace("ServerConnection connect pending.");
         break;
 
       case ERROR_PIPE_CONNECTED:
-        log::trace("Pipe client was already connected.");
+        log::trace("ServerConnection client was already connected.");
         SetEvent(_overlapped.hEvent);
         break;
 
       default:
-        log::error("Pipe connection failed: 0x{:X} {}", err, lastErrorString(err));
+        log::error("ServerConnection connection failed: 0x{:X} {}", err,
+                   lastErrorString(err));
         co_return false;
     }
   }
@@ -207,21 +209,23 @@ wscoro::Task<bool> Connection::connect() {
   _overlapped.Pointer = nullptr;
   _overlapped.hEvent = nullptr;
   _key.coroutine = co_await wscoro::this_coroutine;
+  log::trace("ServerConnection connect to pipe.");
   if (ConnectNamedPipe(_file.get(), &_overlapped)) {
-    log::trace("Pipe connected synchronously.");
+    log::trace("ServerConnection pipe connected synchronously.");
   } else {
     auto err = GetLastError();
     switch (err) {
       case ERROR_IO_PENDING:
-        log::trace("Waiting for pipe connection.");
+        log::trace("ServerConnection connect pending.");
         break;
 
       case ERROR_PIPE_CONNECTED:
-        log::trace("Pipe client was already connected.");
+        log::trace("ServerConnection client was already connected.");
         break;
 
       default:
-        log::error("Pipe connection failed: 0x{:X} {}", err, lastErrorString(err));
+        log::error("ServerConnection connection failed: 0x{:X} {}", err,
+                   lastErrorString(err));
         co_return false;
     }
   }
@@ -232,21 +236,21 @@ wscoro::Task<bool> Connection::connect() {
 
 bool Connection::disconnect() {
   if (DisconnectNamedPipe(_file.get())) {
-    log::trace("Pipe disconnected.");
+    log::trace("ServerConnection pipe disconnected.");
     return true;
   }
   auto err = GetLastError();
   if (err == ERROR_PIPE_NOT_CONNECTED) {
-    log::trace("Pipe was already disconnected.");
+    log::trace("ServerConnection pipe was already disconnected.");
     return true;
   }
-  log::error("Pipe disconnect error 0x{:X} {}", err, lastErrorString(err));
+  log::error("ServerConnection pipe disconnect error 0x{:X} {}", err,
+             lastErrorString(err));
   return false;
 }
 
 wscoro::FireAndForget Connection::run(Bootstrap *bootstrap) {
-  auto prewrite = [this] () -> bool {
-    log::info("Client sent: {}", _buffer);
+  auto clearBuffer = [this] () -> bool {
     _buffer.clear();
     return true;
   };
@@ -256,7 +260,7 @@ wscoro::FireAndForget Connection::run(Bootstrap *bootstrap) {
       ? co_await connect(*bootstrap)
       : co_await connect())
     && co_await readToEnd(_buffer)
-    && prewrite()
+    && clearBuffer()
     && co_await write({msg::server::AccessDenied, msg::server::AccessDenied + 4})
     && disconnect()
   );
@@ -288,9 +292,9 @@ HRESULT Server::operator()(int nUserThreads, int nSystemThreads) {
 void Server::quit() {
   if (auto corio = static_cast<CorIO *>(_quitHandle)) {
     corio->postQuitMessage(0);
-    log::trace("Posted quit message.");
+    log::trace("Server posted quit message.");
   } else {
-    log::error("Quit called without quit handle set.");
+    log::error("Server quit called without quit handle set.");
     std::terminate();
   }
 }
