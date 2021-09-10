@@ -39,6 +39,18 @@ void wsudo::server::serverMain(Config &config) {
   }
 }
 
+class Connection : public CorIO::AsyncFile {
+  std::string _buffer;
+
+  wscoro::Task<bool> connect();
+  bool disconnect();
+
+public:
+  using CorIO::AsyncFile::AsyncFile;
+
+  wscoro::FireAndForget run();
+};
+
 HRESULT Server::initSecurity() noexcept {
   SID_IDENTIFIER_AUTHORITY worldAuthority = SECURITY_WORLD_SID_AUTHORITY;
   RETURN_IF_WIN32_BOOL_FALSE(
@@ -109,100 +121,6 @@ Server::Server(std::wstring pipeName)
   : _pipeName{std::move(pipeName)}
 {}
 
-class Connection : public CorIO::AsyncFile {
-  std::string _buffer;
-
-public:
-  using CorIO::AsyncFile::AsyncFile;
-
-  class Bootstrap;
-  wscoro::Task<bool> connect(Bootstrap &bootstrap);
-  wscoro::Task<bool> connect();
-  bool disconnect();
-  wscoro::FireAndForget run(Bootstrap *bootstrap = nullptr);
-
-  class Bootstrap {
-    CorIO *_corio;
-    std::coroutine_handle<> _coroutine;
-    wil::unique_event _event;
-    std::thread _thread;
-
-    void loop() {
-      log::debug("Begin connection bootstrap loop.");
-      while (true) {
-        auto result = WaitForSingleObject(_event.get(), INFINITE);
-        _event.ResetEvent();
-        if (!_coroutine) {
-          log::trace("Connection bootstrap finished.");
-          return;
-        }
-        log::debug("Connection bootstrap entering main loop.");
-        _corio->postCallback([=] () { _coroutine.resume(); });
-      }
-    }
-
-  public:
-    explicit Bootstrap(CorIO &corio)
-      : _corio{&corio},
-        _event{CreateEvent(nullptr, true, false, nullptr)},
-        _thread{[this] () { this->loop(); }}
-    {}
-
-    ~Bootstrap() {
-      if (_thread.joinable()) {
-        log::trace("Bootstrap destroy");
-        quit();
-      }
-    }
-
-    HANDLE prepare(std::coroutine_handle<> coroutine) {
-      _coroutine = coroutine;
-      return _event.get();
-    }
-
-    void quit() {
-      _coroutine = nullptr;
-      _event.SetEvent();
-      _thread.join();
-    }
-  };
-};
-
-wscoro::Task<bool> Connection::connect(Bootstrap &bootstrap) {
-  _overlapped.Internal = 0;
-  _overlapped.InternalHigh = 0;
-  _overlapped.Pointer = nullptr;
-  // Setting the low order bit ensures that the IOCP won't be notified.
-  _overlapped.hEvent = reinterpret_cast<HANDLE>(1 | reinterpret_cast<size_t>(
-    bootstrap.prepare(co_await wscoro::this_coroutine)
-  ));
-  log::trace("ServerConnection connect to pipe.");
-  if (ConnectNamedPipe(_file.get(), &_overlapped)) {
-    log::trace("ServerConnection pipe connected synchronously.");
-    SetEvent(_overlapped.hEvent);
-  } else {
-    auto err = GetLastError();
-    switch (err) {
-      case ERROR_IO_PENDING:
-        log::trace("ServerConnection connect pending.");
-        break;
-
-      case ERROR_PIPE_CONNECTED:
-        log::trace("ServerConnection client was already connected.");
-        SetEvent(_overlapped.hEvent);
-        break;
-
-      default:
-        log::error("ServerConnection connection failed: 0x{:X} {}", err,
-                   lastErrorString(err));
-        co_return false;
-    }
-  }
-
-  co_await std::suspend_always{};
-  co_return true;
-}
-
 wscoro::Task<bool> Connection::connect() {
   _overlapped.Internal = 0;
   _overlapped.InternalHigh = 0;
@@ -249,16 +167,14 @@ bool Connection::disconnect() {
   return false;
 }
 
-wscoro::FireAndForget Connection::run(Bootstrap *bootstrap) {
+wscoro::FireAndForget Connection::run() {
   auto clearBuffer = [this] () -> bool {
     _buffer.clear();
     return true;
   };
 
   while (
-    (bootstrap
-      ? co_await connect(*bootstrap)
-      : co_await connect())
+       co_await connect()
     && co_await readToEnd(_buffer)
     && clearBuffer()
     && co_await write({msg::server::AccessDenied, msg::server::AccessDenied + 4})
@@ -273,18 +189,8 @@ HRESULT Server::operator()(int nUserThreads, int nSystemThreads) {
   CorIO corio(nSystemThreads);
   _quitHandle = &corio;
   corio.run(nUserThreads);
-
-  auto pipe = initPipe(true);
-  auto conn = corio.make<Connection>(pipe);
-
-  if (options.useConnectionBootstrap) {
-    Connection::Bootstrap boot(corio);
-    conn.run(&boot);
-    corio.wait();
-  } else {
-    conn.run();
-    corio.wait();
-  }
+  corio.make<Connection>(initPipe(true)).run();
+  corio.make<Connection>(initPipe()).run();
 
   return S_OK;
 }

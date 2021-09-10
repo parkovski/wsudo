@@ -99,9 +99,6 @@ int wmain(int argc, wchar_t *argv[]) {
     log::debug("Using CorIO server.");
     Server server{PipeFullPath};
     g_server = &server;
-    if (argc > 2 && argv[2][0] == L'-' && argv[2][1] == L'b' && argv[2][2] == 0) {
-      server.options.useConnectionBootstrap = true;
-    }
     server(2);
     return 0;
   }

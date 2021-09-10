@@ -146,10 +146,6 @@ class Server {
   HANDLE initPipe(bool first = false);
 
 public:
-  struct Options {
-    bool useConnectionBootstrap = false;
-  } options;
-
   explicit Server(std::wstring pipeName);
 
   HRESULT operator()(int nUserThreads = 0, int nSystemThreads = 0);

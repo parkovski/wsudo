@@ -155,6 +155,7 @@ CorIO::CorIO(int nSystemThreads)
                              static_cast<DWORD>(nSystemThreads))
     }
 {
+  log::trace("CorIO created IO completion port.");
   THROW_LAST_ERROR_IF_NULL(_ioCompletionPort.get());
 }
 
