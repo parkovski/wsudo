@@ -69,7 +69,7 @@ CorIO::AsyncFile::AsyncFile(CorIO &corio, wil::unique_hfile file)
 
 wscoro::Task<bool>
 CorIO::AsyncFile::readToEnd(std::string &buffer) noexcept {
-  const size_t chunkSize = 8;
+  const size_t chunkSize = 128;
   char chunk[chunkSize];
   auto this_coro = co_await wscoro::this_coroutine;
 

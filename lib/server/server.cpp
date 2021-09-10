@@ -39,18 +39,6 @@ void wsudo::server::serverMain(Config &config) {
   }
 }
 
-class Connection : public CorIO::AsyncFile {
-  std::string _buffer;
-
-  wscoro::Task<bool> connect();
-  bool disconnect();
-
-public:
-  using CorIO::AsyncFile::AsyncFile;
-
-  wscoro::FireAndForget run();
-};
-
 HRESULT Server::initSecurity() noexcept {
   SID_IDENTIFIER_AUTHORITY worldAuthority = SECURITY_WORLD_SID_AUTHORITY;
   RETURN_IF_WIN32_BOOL_FALSE(
@@ -121,7 +109,44 @@ Server::Server(std::wstring pipeName)
   : _pipeName{std::move(pipeName)}
 {}
 
-wscoro::Task<bool> Connection::connect() {
+HRESULT Server::operator()(int nUserThreads, int nSystemThreads) {
+  log::debug("Server start; user threads = {}; system threads = {}.",
+             nUserThreads, nSystemThreads);
+
+  CorIO corio(nSystemThreads);
+  _quitHandle = &corio;
+  corio.run(nUserThreads);
+
+  auto c1 = corio.make<Connection>(initPipe(true), *this);
+  auto c2 = corio.make<Connection>(initPipe(), *this);
+  c1.run();
+  c2.run();
+
+  corio.wait();
+
+  return S_OK;
+}
+
+void Server::quit() {
+  if (auto corio = static_cast<CorIO *>(_quitHandle)) {
+    corio->postQuitMessage(0);
+    log::trace("Server posted quit message.");
+  } else {
+    log::error("Server quit called without quit handle set.");
+    std::terminate();
+  }
+}
+
+wscoro::Task<bool> Server::run(Connection &conn) {
+  if (!co_await conn.read()) {
+    co_return false;
+  }
+  conn.clear();
+  conn.append(msg::server::AccessDenied);
+  co_return co_await conn.respond();
+}
+
+wscoro::Task<bool> Server::Connection::connect() {
   _overlapped.Internal = 0;
   _overlapped.InternalHigh = 0;
   _overlapped.Pointer = nullptr;
@@ -152,7 +177,7 @@ wscoro::Task<bool> Connection::connect() {
   co_return true;
 }
 
-bool Connection::disconnect() {
+bool Server::Connection::disconnect() {
   if (DisconnectNamedPipe(_file.get())) {
     log::trace("ServerConnection pipe disconnected.");
     return true;
@@ -167,40 +192,21 @@ bool Connection::disconnect() {
   return false;
 }
 
-wscoro::FireAndForget Connection::run() {
-  auto clearBuffer = [this] () -> bool {
-    _buffer.clear();
-    return true;
-  };
-
+wscoro::FireAndForget Server::Connection::run() {
   while (
        co_await connect()
-    && co_await readToEnd(_buffer)
-    && clearBuffer()
-    && co_await write({msg::server::AccessDenied, msg::server::AccessDenied + 4})
+    && co_await _server->run(*this)
     && disconnect()
   );
 }
 
-HRESULT Server::operator()(int nUserThreads, int nSystemThreads) {
-  log::debug("Server start; user threads = {}; system threads = {}.",
-             nUserThreads, nSystemThreads);
-
-  CorIO corio(nSystemThreads);
-  _quitHandle = &corio;
-  corio.run(nUserThreads);
-  corio.make<Connection>(initPipe(true)).run();
-  corio.make<Connection>(initPipe()).run();
-
-  return S_OK;
+wscoro::Task<bool> Server::Connection::read() {
+  _buffer.clear();
+  co_return co_await readToEnd(_buffer);
 }
 
-void Server::quit() {
-  if (auto corio = static_cast<CorIO *>(_quitHandle)) {
-    corio->postQuitMessage(0);
-    log::trace("Server posted quit message.");
-  } else {
-    log::error("Server quit called without quit handle set.");
-    std::terminate();
-  }
+wscoro::Task<bool> Server::Connection::respond() {
+  bool result = co_await write(_buffer);
+  clear();
+  co_return result;
 }

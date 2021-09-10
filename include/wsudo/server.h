@@ -5,6 +5,7 @@
 #include "events.h"
 #include "session.h"
 
+#include "corio.h"
 #include "wscoro/basictasks.h"
 
 #include <memory>
@@ -150,6 +151,36 @@ public:
 
   HRESULT operator()(int nUserThreads = 0, int nSystemThreads = 0);
   void quit();
+
+  class Connection;
+  wscoro::Task<bool> run(Connection &conn);
+
+  class Connection : private CorIO::AsyncFile {
+    Server *_server;
+    std::string _buffer;
+
+    wscoro::Task<bool> connect();
+    bool disconnect();
+
+  public:
+    explicit Connection(CorIO &corio, wil::unique_hfile file, Server &server)
+      : CorIO::AsyncFile::AsyncFile(corio, std::move(file)),
+        _server{&server}
+    {}
+
+    wscoro::FireAndForget run();
+
+    // Writes zeroes to the buffer before clearing.
+    void clear() noexcept {
+      _buffer.assign(_buffer.size(), '\0');
+      _buffer.clear();
+    }
+    std::string &buffer() noexcept { return _buffer; }
+    std::string &append(std::string_view str) { return _buffer.append(str); }
+
+    wscoro::Task<bool> read();
+    wscoro::Task<bool> respond();
+  };
 };
 
 } // namespace wsudo

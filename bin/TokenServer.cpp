@@ -64,9 +64,6 @@ int wmain(int argc, wchar_t *argv[]) {
   spdlog::set_pattern("[%Y-%m-%d %T.%e] %^[%5l]%$ %v");
 #endif
 
-  // VC++ deadlock bug
-  WSUDO_SCOPEEXIT { spdlog::drop_all(); };
-
   HANDLE hStdin = GetStdHandle(STD_INPUT_HANDLE);
   HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 
