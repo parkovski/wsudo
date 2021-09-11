@@ -132,6 +132,10 @@ namespace wsudo {
 using namespace server;
 
 class Server {
+public:
+  class Connection;
+
+private:
   // Security
   wil::unique_sid _sid;
   wil::unique_hlocal_ptr<ACL> _acl;
@@ -152,8 +156,12 @@ public:
   HRESULT operator()(int nUserThreads = 0, int nSystemThreads = 0);
   void quit();
 
-  class Connection;
   wscoro::Task<bool> run(Connection &conn);
+
+private:
+  wscoro::Task<bool> dispatch(Connection &conn);
+
+public:
 
   class Connection : private CorIO::AsyncFile {
     Server *_server;
@@ -171,9 +179,10 @@ public:
     wscoro::FireAndForget run();
 
     // Writes zeroes to the buffer before clearing.
-    void clear() noexcept {
+    std::string &clear() noexcept {
       _buffer.assign(_buffer.size(), '\0');
       _buffer.clear();
+      return _buffer;
     }
     std::string &buffer() noexcept { return _buffer; }
     std::string &append(std::string_view str) { return _buffer.append(str); }

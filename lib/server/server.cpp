@@ -139,11 +139,27 @@ void Server::quit() {
 
 wscoro::Task<bool> Server::run(Connection &conn) {
   if (!co_await conn.read()) {
-    co_return false;
+    co_return true;
   }
-  conn.clear();
-  conn.append(msg::server::AccessDenied);
-  co_return co_await conn.respond();
+  co_return co_await dispatch(conn);
+}
+
+wscoro::Task<bool> Server::dispatch(Connection &conn) {
+  auto &buf = conn.buffer();
+  if (buf.size() < 4) {
+    log::warn("Server found no message header.");
+    conn.clear().append(msg::server::InvalidMessage);
+    co_await conn.respond();
+    co_return true;
+  }
+
+  char header[4] = {buf[0], buf[1], buf[2], buf[3]};
+  std::string_view header_s{header, 4};
+  //uint32_t msgid = *reinterpret_cast<uint32_t *>(header);
+  log::debug("Received message {}.", header_s);
+  conn.clear().append(msg::server::AccessDenied);
+  co_await conn.respond();
+  co_return true;
 }
 
 wscoro::Task<bool> Server::Connection::connect() {
@@ -198,6 +214,7 @@ wscoro::FireAndForget Server::Connection::run() {
     && co_await _server->run(*this)
     && disconnect()
   );
+  clear();
 }
 
 wscoro::Task<bool> Server::Connection::read() {
