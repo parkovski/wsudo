@@ -4,7 +4,10 @@
   "version-string": "0.1-alpha",
   "dependencies": [
     "fmt",
-    "spdlog",
+    {
+      "name": "spdlog",
+      "features": ["wchar"]
+    },
     "wil"
   ],
   "$get-this-yourself": "https://github.com/parkovski/wscoro",
