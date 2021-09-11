@@ -6,13 +6,13 @@
 #define NTDDI_VERSION NTDDI_WIN7
 #define NOMINMAX
 #include <Windows.h>
-#include "winsupport.h"
+#include "int/winsupport.h"
 
 // Winternl.h and NTSecAPI.h both define some of the same types so
 // we can't include both in the same file. Thanks Microsoft.
 #ifndef WSUDO_NO_NT_API
 #  include <winternl.h>
-#  include "ntapi.h"
+#  include "int/ntapi.h"
 #endif
 
 #include <spdlog/spdlog.h>
