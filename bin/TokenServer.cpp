@@ -1,8 +1,11 @@
 #include "wsudo/server.h"
 
 #include <spdlog/sinks/stdout_color_sinks.h>
+
 #include <fmt/format.h>
+
 #include <Psapi.h>
+
 #include <cstring>
 #include <string>
 #include <iostream>
@@ -11,7 +14,6 @@
 
 using namespace wsudo;
 
-static HANDLE gs_quitEventHandle = nullptr;
 static Server *g_server = nullptr;
 BOOL WINAPI consoleControlHandler(DWORD event) {
   const char *eventName;
@@ -38,16 +40,13 @@ BOOL WINAPI consoleControlHandler(DWORD event) {
   log::info("Received {} event, quitting.", eventName);
   if (g_server) {
     g_server->quit();
+    // If this attempt fails, next time we will hit the terminate() path.
     g_server = nullptr;
-    return true;
-  }
-  if (!gs_quitEventHandle || !SetEvent(gs_quitEventHandle)) {
+  } else {
     log::warn("Can't notify server thread; forcing shutdown.");
     std::terminate();
   }
 
-  // If this attempt fails, next time we will hit the terminate() path.
-  gs_quitEventHandle = nullptr;
   return true;
 }
 
@@ -92,17 +91,7 @@ int wmain(int argc, wchar_t *argv[]) {
     log::info("Starting server. Press Ctrl-C to exit.");
   }
 
-  if (argc >= 2 && argv[1][0] == L'-' && argv[1][1] == L'2' && argv[1][2] == 0) {
-    log::debug("Using CorIO server.");
-    Server server{PipeFullPath};
-    g_server = &server;
-    server(2);
-    return 0;
-  }
-
-  server::Config config{ PipeFullPath, &gs_quitEventHandle };
-  std::thread serverThread{&server::serverMain, std::ref(config)};
-  serverThread.join();
-  log::info("Event loop returned {}.", server::statusToString(config.status));
-  return 0;
+  Server server{PipeFullPath};
+  g_server = &server;
+  return static_cast<int>(server(2));
 }

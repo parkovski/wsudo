@@ -113,8 +113,9 @@ template<typename... Args>
 static inline void critical(const char *fmt, Args &&...args)
 { g_errLogger->critical(fmt, std::forward<Args>(args)...); }
 
-// wchar_t loggers (not currently working).
-#ifndef WSUDO_WCHAR_T_LOGGING
+#ifndef SPDLOG_WCHAR_TO_UTF8_SUPPORT
+#error "Requires spdlog wchar_t logging feature"
+#endif
 
 /// Print to stdout with no prefix (wchar_t version).
 template<typename... Args>
@@ -156,88 +157,7 @@ template<typename... Args>
 static inline void critical(const wchar_t *fmt, Args &&...args)
 { g_errLogger->critical(fmt, std::forward<Args>(args)...); }
 
-#endif
-
 } // namespace log
-
-// Wrapper for a function that returns a pointer of its own type, enabling
-// endless recursive callbacks.
-template<typename... Args>
-struct recursive_callback {
-  using pointer = recursive_callback (*)(Args...);
-
-  // Default (null pointer) constructor.
-  constexpr recursive_callback() noexcept
-    : function{nullptr}
-  {}
-
-  // Implicit conversion from pointer type.
-  constexpr recursive_callback(pointer function) noexcept
-    : function{function}
-  {}
-
-  // Copy
-  recursive_callback(const recursive_callback &) = default;
-
-  // Copy assign
-  recursive_callback & operator=(const recursive_callback &) = default;
-
-  // Call the function, returning the next callback.
-  constexpr inline recursive_callback operator()(Args &&...args) const {
-    return function(std::forward<Args>(args)...);
-  }
-
-  // Call the function, replacing it with the returned callback.
-  constexpr inline bool call_and_swap(Args &&...args) {
-    function = function(std::forward<Args>(args)...);
-    return !!function;
-  }
-
-  // Null check.
-  constexpr explicit operator bool() const { return !!function; }
-
-private:
-  pointer function;
-};
-
-// Wrapper for recursive member function callbacks.
-template<typename T, typename... Args>
-struct recursive_mem_callback {
-  using pointer = recursive_mem_callback (T::*)(Args...);
-
-  // Default (null pointer) constructor.
-  constexpr recursive_mem_callback() noexcept
-    : function{nullptr}
-  {}
-
-  // Implicit conversion from member pointer type.
-  constexpr recursive_mem_callback(pointer function) noexcept
-    : function{function}
-  {}
-
-  // Copy.
-  recursive_mem_callback(const recursive_mem_callback &) = default;
-
-  // Copy assign.
-  recursive_mem_callback & operator=(const recursive_mem_callback &) = default;
-
-  // Call the function, returning the next callback.
-  constexpr inline recursive_mem_callback operator()(T &self, Args &&...args) {
-    return (self.*function)(std::forward<Args>(args)...);
-  }
-
-  // Call the function, replacing it with the returned callback.
-  constexpr inline bool call_and_swap(T &self, Args &&...args) {
-    function = (self.*function)(std::forward<Args>(args)...).function;
-    return !!function;
-  }
-
-  // Null check.
-  constexpr explicit operator bool() const { return !!function; }
-
-private:
-  pointer function;
-};
 
 namespace detail {
   /// RAII wrapper to run a function when the scope exits.
