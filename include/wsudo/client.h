@@ -3,6 +3,8 @@
 
 #include "wsudo.h"
 
+#include <wil/resource.h>
+
 #include <vector>
 
 namespace wsudo {
@@ -41,7 +43,7 @@ static inline const char *clientExitToString(ClientExitCode code) {
 }
 
 class ClientConnection {
-  HObject _pipe;
+  wil::unique_hfile _pipe;
   std::vector<char> _buffer;
 
   constexpr static int MaxConnectAttempts = 3;
@@ -67,4 +69,3 @@ public:
 } // namespace wsudo
 
 #endif // WSUDO_CLIENT_H
-

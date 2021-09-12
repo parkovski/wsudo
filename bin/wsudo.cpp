@@ -31,7 +31,7 @@ void ClientConnection::connect(
     return;
   }
 
-  _pipe = pipe;
+  _pipe = wil::unique_hfile{pipe};
 }
 
 ClientConnection::ClientConnection(const wchar_t *pipeName) {
@@ -53,17 +53,14 @@ bool ClientConnection::negotiate(const char *credentials, size_t length) {
   std::memcpy(_buffer.data(), msg::client::Credential, 4);
   std::memcpy(_buffer.data() + 4, credentials, length);
   log::trace("Writing credential message, size {}", messageLength);
-  if (
-    !WriteFile(_pipe, _buffer.data(), (DWORD)messageLength, &bytes, nullptr) ||
-    bytes != messageLength
-  )
-  {
+  if (!WriteFile(_pipe.get(), _buffer.data(), (DWORD)messageLength, &bytes,
+                 nullptr) || bytes != messageLength) {
     log::error("Couldn't write negotiate message.");
     return false;
   }
 
   _buffer.resize(PipeBufferSize);
-  if (!ReadFile(_pipe, _buffer.data(), PipeBufferSize, &bytes, nullptr)) {
+  if (!ReadFile(_pipe.get(), _buffer.data(), PipeBufferSize, &bytes, nullptr)) {
     log::error("Couldn't read server response.");
     return false;
   }
@@ -79,17 +76,14 @@ bool ClientConnection::bless(HANDLE process) {
   std::memcpy(_buffer.data(), msg::client::Bless, 4);
   std::memcpy(_buffer.data() + 4, &process, sizeof(HANDLE));
   log::trace("Writing bless message, size {}", messageLength);
-  if (
-    !WriteFile(_pipe, _buffer.data(), (DWORD)messageLength, &bytes, nullptr) ||
-    bytes != messageLength
-  )
-  {
+  if (!WriteFile(_pipe.get(), _buffer.data(), (DWORD)messageLength, &bytes,
+                 nullptr) || bytes != messageLength) {
     log::error("Couldn't write bless message.");
     return false;
   }
 
   _buffer.resize(PipeBufferSize);
-  if (!ReadFile(_pipe, _buffer.data(), PipeBufferSize, &bytes, nullptr)) {
+  if (!ReadFile(_pipe.get(), _buffer.data(), PipeBufferSize, &bytes, nullptr)) {
     log::error("Couldn't read server response.");
     return false;
   }
@@ -273,4 +267,3 @@ int wmain(int argc, wchar_t *argv[]) {
 
   return (int)exitCode;
 }
-

@@ -29,7 +29,7 @@ namespace wsudo {
 extern const wchar_t *const PipeFullPath;
 
 /// Pipe's buffer size in bytes.
-constexpr size_t PipeBufferSize = 1024;
+constexpr size_t PipeBufferSize = 128;
 
 // Maximum concurrent server connections. Being sudo, it's unlikely to have to
 // process many things concurrently, but we have to give Windows a number.

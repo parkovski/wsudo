@@ -3,6 +3,8 @@
 
 #include "wsudo.h"
 
+#include <wil/resource.h>
+
 #include <unordered_map>
 #include <string>
 #include <string_view>
@@ -36,7 +38,7 @@ private:
   std::shared_ptr<Session> store(Session &&session);
 
   unsigned _defaultTtlSeconds;
-  HObject _timer;
+  wil::unique_handle _timer;
   std::wstring _localDomain;
   std::unordered_map<std::wstring_view, std::shared_ptr<Session>> _sessions;
 };
@@ -69,11 +71,11 @@ public:
   }
 
   HANDLE token() const {
-    return _token;
+    return _token.get();
   }
 
   PSID psid() const {
-    return _pSid;
+    return _pSid.get();
   }
 
   explicit operator bool() const {
@@ -83,8 +85,8 @@ public:
 private:
   const std::wstring _username;
   const std::wstring _domain;
-  HObject _token;
-  HLocalPtr<PSID> _pSid;
+  wil::unique_handle _token;
+  wil::unique_sid _pSid;
   // The amount of time this session will be kept open without being referenced.
   // Each time the session is used, its lifetime is reset to this value.
   unsigned _ttlResetSeconds;

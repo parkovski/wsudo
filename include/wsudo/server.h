@@ -46,7 +46,6 @@ private:
   wscoro::Task<bool> dispatch(Connection &conn);
 
 public:
-
   class Connection : private CorIO::AsyncFile {
     Server *_server;
     std::string _buffer;

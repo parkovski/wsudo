@@ -1,5 +1,7 @@
 #include "wsudo/wsudo.h"
 
+#include <wil/resource.h>
+
 #include <catch2/catch_all.hpp>
 
 TEST_CASE("LogonUser", "[.logon]") {
@@ -21,14 +23,14 @@ TEST_CASE("LogonUser", "[.logon]") {
     FAIL("Password (env WSPASSWORD) too long.");
   }
 
-  wsudo::HObject token;
-  wsudo::HLocalPtr<PSID> pSid;
+  wil::unique_handle token;
+  wil::unique_sid pSid;
   PVOID pProfileBuffer;
   DWORD profileLength;
   QUOTA_LIMITS quotaLimits;
   if (!LogonUserExW(username, L".", password, LOGON32_LOGON_NETWORK,
-                    LOGON32_PROVIDER_DEFAULT, &token, &pSid, &pProfileBuffer,
-                    &profileLength, &quotaLimits))
+                    LOGON32_PROVIDER_DEFAULT, token.put(), pSid.addressof(),
+                    &pProfileBuffer, &profileLength, &quotaLimits))
   {
     FAIL("LogonUserExW failed" << wsudo::lastErrorString());
   }
