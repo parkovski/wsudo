@@ -46,7 +46,7 @@ private:
   wscoro::Task<bool> dispatch(Connection &conn);
 
 public:
-  class Connection : private CorIO::AsyncFile {
+  class Connection : private CorIO::Pipe {
     Server *_server;
     std::string _buffer;
 
@@ -55,7 +55,7 @@ public:
 
   public:
     explicit Connection(CorIO &corio, wil::unique_hfile file, Server &server)
-      : CorIO::AsyncFile::AsyncFile(corio, std::move(file)),
+      : CorIO::Pipe::Pipe(corio, std::move(file)),
         _server{&server}
     {}
 

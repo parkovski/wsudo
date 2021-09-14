@@ -61,94 +61,6 @@ void CorIO::listener() noexcept {
   }
 }
 
-CorIO::AsyncFile::AsyncFile(CorIO &corio, wil::unique_hfile file)
-  : _file{std::move(file)}, _overlapped{}, _key{}
-{
-  corio.registerFile(*this);
-}
-
-wscoro::Task<bool>
-CorIO::AsyncFile::readToEnd(std::string &buffer) noexcept {
-  const size_t chunkSize = 128;
-  char chunk[chunkSize];
-  auto this_coro = co_await wscoro::this_coroutine;
-
-  while (true) {
-    _key.coroutine = this_coro;
-    prepareOverlapped();
-    log::trace("CorIO begin read.");
-    ReadFile(_file.get(), chunk, chunkSize, nullptr, &_overlapped);
-    co_await std::suspend_always{};
-
-    DWORD bytes;
-    if (GetOverlappedResult(_file.get(), &_overlapped, &bytes, false)) {
-      log::trace("CorIO read finished with {} bytes.", bytes);
-      buffer.append(chunk, chunk + bytes);
-      co_return true;
-    }
-
-    auto err = GetLastError();
-    if (err == ERROR_MORE_DATA) {
-      buffer.append(chunk, chunk + bytes);
-      addOffset((size_t)bytes);
-      continue;
-    } else if (err == ERROR_BROKEN_PIPE) {
-      log::warn("CorIO pipe disconnected by client.");
-      co_return false;
-    }
-
-    log::error("CorIO GetOverlappedResult failed: 0x{:X} {}", err,
-                lastErrorString(err));
-    co_return false;
-  }
-}
-
-wscoro::Task<bool>
-CorIO::AsyncFile::write(std::span<const char> buffer) noexcept {
-  auto this_coro = co_await wscoro::this_coroutine;
-
-  size_t bufferOffset = 0;
-  while (bufferOffset < buffer.size()) {
-    auto remaining = buffer.size() - bufferOffset;
-    assert(remaining < (size_t)std::numeric_limits<DWORD>::max());
-
-    _key.coroutine = this_coro;
-    prepareOverlapped();
-    log::trace("CorIO begin write.");
-    WriteFile(_file.get(), buffer.data() + bufferOffset,
-              static_cast<DWORD>(remaining), nullptr, &_overlapped);
-    co_await std::suspend_always{};
-
-    DWORD bytes;
-    if (GetOverlappedResult(_file.get(), &_overlapped, &bytes, false)) {
-      log::trace("CorIO write finished with {} bytes.", bytes);
-      co_return true;
-    }
-
-    auto err = GetLastError();
-    if (err == ERROR_MORE_DATA) {
-      bufferOffset += bytes;
-      addOffset((size_t)bytes);
-      continue;
-    } else if (err == ERROR_BROKEN_PIPE) {
-      log::warn("CorIO pipe disconnected by client.");
-      co_return false;
-    }
-
-    log::error("CorIO GetOverlappedResult failed: 0x{:X} {}", err,
-                lastErrorString(err));
-    co_return false;
-  }
-}
-
-void CorIO::registerFile(AsyncFile &file) {
-  THROW_LAST_ERROR_IF_NULL(
-    CreateIoCompletionPort(file._file.get(), _ioCompletionPort.get(),
-                           reinterpret_cast<ULONG_PTR>(&file._key), 0)
-  );
-  log::trace("CorIO registered file.");
-}
-
 CorIO::CorIO(int nSystemThreads)
   : _ioCompletionPort{
       CreateIoCompletionPort(INVALID_HANDLE_VALUE, nullptr, 0,
@@ -196,6 +108,13 @@ int CorIO::wait() {
   return 0;
 }
 
+void CorIO::postQuitMessage(int exitCode) {
+  for (int i = 0; i < _threads.size(); ++i) {
+    PostQueuedCompletionStatus(_ioCompletionPort.get(), exitCode, 0,
+                               _quitFlag);
+  }
+}
+
 wscoro::Task<> CorIO::enterIOThread() {
   log::trace("CorIO will enter IO thread.");
   CompletionKey key{co_await wscoro::this_coroutine};
@@ -210,27 +129,203 @@ wscoro::Task<> CorIO::enterIOThread() {
   log::trace("CorIO entered IO thread.");
 }
 
-void CorIO::postQuitMessage(int exitCode) {
-  for (int i = 0; i < _threads.size(); ++i) {
-    PostQueuedCompletionStatus(_ioCompletionPort.get(), exitCode, 0,
-                               _quitFlag);
+void CorIO::registerFile(FileBase &file) {
+  THROW_LAST_ERROR_IF_NULL(
+    CreateIoCompletionPort(file._file.get(), _ioCompletionPort.get(),
+                           reinterpret_cast<ULONG_PTR>(&file._key), 0)
+  );
+  log::trace("CorIO registered file.");
+}
+
+// ===== FileBase =====
+
+CorIO::FileBase::FileBase(CorIO &corio, wil::unique_hfile file)
+  : _file{std::move(file)}
+{
+  corio.registerFile(*this);
+}
+
+wscoro::Task<size_t> CorIO::FileBase::write(std::string_view buffer) {
+  auto this_coro = co_await wscoro::this_coroutine;
+
+  size_t bufferOffset = 0;
+  log::trace("CorIO::FileBase::write {} bytes.", buffer.size());
+  while (true) {
+    auto remaining = buffer.size() - bufferOffset;
+    auto bytes =
+      remaining <= (size_t)std::numeric_limits<DWORD>::max()
+      ? static_cast<DWORD>(remaining)
+      : std::numeric_limits<DWORD>::max();
+
+    _key.coroutine = this_coro;
+    prepareOverlapped();
+    setOffset(0xFFFFFFFF'FFFFFFFF); // Write to the end of the file.
+    log::trace("CorIO::FileBase::write queue async IO for {} bytes.", bytes);
+    WriteFile(_file.get(), buffer.data() + bufferOffset, bytes, nullptr,
+              &_overlapped);
+    co_await std::suspend_always{};
+
+    if (GetOverlappedResult(_file.get(), &_overlapped, &bytes, false)) {
+      bufferOffset += bytes;
+      log::trace("CorIO write {} bytes ({} total).", bytes, bufferOffset);
+      if (bufferOffset == buffer.size()) {
+        co_return bufferOffset;
+      } else {
+        // Not all the buffer has been written.
+        continue;
+      }
+    }
+
+    auto err = GetLastError();
+    switch (err) {
+      case ERROR_OPERATION_ABORTED:
+        // IO canceled.
+        log::warn("CorIO::FileBase::write operation aborted.");
+        co_return bufferOffset;
+
+      case ERROR_BROKEN_PIPE:
+        // TODO: Can WriteFile return this error?
+        log::warn("CorIO::FileBase::write pipe disconnected by client.");
+        co_return bufferOffset;
+
+      case ERROR_INVALID_USER_BUFFER:
+      case ERROR_NOT_ENOUGH_MEMORY:
+        // Possibly too many outstanding async IO requests.
+      case ERROR_NOT_ENOUGH_QUOTA:
+        // Page lock error, see SetProcessWorkingSetSize.
+        [[fallthrough]];
+
+      default:
+        log::error("CorIO::FileBase::write failed: 0x{:X} {}", err,
+                   lastErrorString(err));
+        THROW_WIN32(err);
+    }
   }
 }
 
-CorIO::AsyncFile CorIO::openForReading(const wchar_t *path, DWORD flags) {
+// ===== File =====
+
+size_t CorIO::File::size() const {
+  LARGE_INTEGER size;
+  if (GetFileSizeEx(_file.get(), &size)) {
+    return static_cast<size_t>(size.QuadPart);
+  }
+  THROW_LAST_ERROR();
+}
+
+wscoro::Task<size_t> CorIO::File::read(std::string &buffer, size_t maxBytes) {
+  const DWORD chunkSize = 32768;
+  char chunk[chunkSize];
+  auto this_coro = co_await wscoro::this_coroutine;
+
+  if (maxBytes) {
+    log::trace("CorIO::File::read <= {} bytes.", maxBytes);
+  } else {
+    log::trace("CorIO::File::read to end.");
+  }
+  setOffset(0);
+  while (true) {
+    _key.coroutine = this_coro;
+    prepareOverlapped();
+    DWORD bytes = chunkSize;
+    if (maxBytes && maxBytes - offset() < static_cast<size_t>(chunkSize)) {
+      bytes = static_cast<DWORD>(maxBytes - offset());
+    }
+    log::trace("CorIO::File::read queue async IO for {} bytes.", bytes);
+    ReadFile(_file.get(), chunk, bytes, nullptr, &_overlapped);
+    // Test for sync EOF here?
+    co_await std::suspend_always{};
+
+    if (GetOverlappedResult(_file.get(), &_overlapped, &bytes, false)) {
+      addOffset((size_t)bytes);
+      log::trace("CorIO::File::read {} bytes ({} total).", bytes, offset());
+      buffer.append(chunk, chunk + bytes);
+      if (maxBytes) {
+        if (offset() < maxBytes) {
+          continue;
+        } else if (offset() == maxBytes) {
+          co_return maxBytes;
+        } else {
+          WSUDO_UNREACHABLE("Read more than expected");
+        }
+      } else {
+        continue;
+      }
+    }
+
+    auto err = GetLastError();
+    if (err == ERROR_HANDLE_EOF) {
+      if (bytes) {
+        buffer.append(chunk, chunk + bytes);
+        addOffset((size_t)bytes);
+      }
+      log::trace("CorIO::File::read {} bytes ({} total); saw EOF.", bytes,
+                 offset());
+      co_return offset();
+    }
+
+    log::error("CorIO::File::read failed: 0x{:X} {}", err,
+               lastErrorString(err));
+    THROW_WIN32(err);
+  }
+}
+
+// ===== Pipe =====
+
+wscoro::Task<size_t> CorIO::Pipe::read(std::string &buffer) {
+  const size_t chunkSize = 256;
+  char chunk[chunkSize];
+  auto this_coro = co_await wscoro::this_coroutine;
+
+  setOffset(0);
+  while (true) {
+    _key.coroutine = this_coro;
+    prepareOverlapped();
+    log::trace("CorIO::Pipe::read queue async IO for {} bytes.", chunkSize);
+    ReadFile(_file.get(), chunk, chunkSize, nullptr, &_overlapped);
+    co_await std::suspend_always{};
+
+    DWORD bytes;
+    if (GetOverlappedResult(_file.get(), &_overlapped, &bytes, false)) {
+      addOffset((size_t)bytes);
+      buffer.append(chunk, chunk + bytes);
+      log::trace("CorIO::Pipe::read {} bytes ({} total); finished.", bytes,
+                 offset());
+      co_return offset();
+    }
+
+    auto err = GetLastError();
+    if (err == ERROR_MORE_DATA) {
+      buffer.append(chunk, chunk + bytes);
+      addOffset((size_t)bytes);
+      log::trace("CorIO::Pipe::read {} bytes ({} total); more data available.",
+                 bytes, offset());
+      continue;
+    } else if (err == ERROR_BROKEN_PIPE) {
+      log::warn("CorIO::Pipe::read pipe disconnected by client.");
+      co_return 0;
+    }
+
+    log::error("CorIO::Pipe::read failed: 0x{:X} {}", err,
+                lastErrorString(err));
+    THROW_WIN32(err);
+  }
+}
+
+CorIO::File CorIO::openForReading(const wchar_t *path, DWORD flags) {
   HANDLE file = CreateFile(path, GENERIC_READ, FILE_SHARE_READ, nullptr,
                            OPEN_EXISTING, flags | FILE_FLAG_OVERLAPPED,
                            nullptr);
-  return {
+  return CorIO::File{
     *this,
     wil::unique_hfile{file}
   };
 }
 
-CorIO::AsyncFile CorIO::openForWriting(const wchar_t *path, DWORD flags) {
+CorIO::File CorIO::openForWriting(const wchar_t *path, DWORD flags) {
   HANDLE file = CreateFile(path, GENERIC_WRITE, 0, nullptr, OPEN_ALWAYS,
                            flags | FILE_FLAG_OVERLAPPED, nullptr);
-  return {
+  return CorIO::File{
     *this,
     wil::unique_hfile{file}
   };

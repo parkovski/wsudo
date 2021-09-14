@@ -37,70 +37,6 @@ public:
     {}
   };
 
-  class AsyncFile {
-    friend class CorIO;
-
-  protected:
-    CompletionKey _key;
-    wil::unique_hfile _file;
-    OVERLAPPED _overlapped;
-
-    void prepareOverlapped() noexcept {
-      _overlapped.Internal = 0;
-      _overlapped.InternalHigh = 0;
-      _overlapped.hEvent = nullptr;
-    }
-
-  public:
-    AsyncFile(CorIO &corio, wil::unique_hfile file);
-
-    size_t offset() const noexcept {
-      return reinterpret_cast<size_t>(_overlapped.Pointer);
-    }
-
-    size_t setOffset(size_t offset) noexcept {
-      _overlapped.Pointer = reinterpret_cast<void *>(offset);
-      return offset;
-    }
-
-    size_t addOffset(size_t offset) noexcept {
-      // Check overflow.
-      assert(offset <= std::numeric_limits<size_t>::max() - this->offset());
-      return setOffset(this->offset() + offset);
-    }
-
-    size_t addOffset(ptrdiff_t offset) noexcept {
-      if (offset < 0) {
-        // Check overflow.
-        assert(static_cast<size_t>(-offset) <= this->offset());
-        return setOffset(this->offset() - static_cast<size_t>(-offset));
-      } else {
-        return addOffset(static_cast<size_t>(offset));
-      }
-    }
-
-    /// Write the contents of `buffer` to the file.
-    /// \return True if the file is still good, false if the handle is no longer
-    /// valid (disconnected pipe).
-    wscoro::Task<bool> write(std::span<const char> buffer) noexcept;
-
-    /// Read the entire contents of the file into `buffer`.
-    /// \return True if the file is still good, false if the handle is no longer
-    /// valid (disconnected pipe).
-    wscoro::Task<bool> readToEnd(std::string &buffer) noexcept;
-
-    wscoro::Task<std::string> readToEnd() {
-      std::string buffer;
-      co_await readToEnd(buffer);
-      co_return buffer;
-    }
-  };
-
-private:
-  void registerFile(AsyncFile &file);
-  wscoro::Task<> enterIOThread();
-
-public:
   explicit CorIO(int nSystemThreads = 0);
   ~CorIO();
 
@@ -130,12 +66,84 @@ public:
   /// Notify all threads to quit.
   void postQuitMessage(int exitCode);
 
-  // Moves ownership of fileHandle into the returned AsyncFile. The file is
-  // registered with the associated IO completion port. fileHandle must have
-  // been opened with FILE_FLAG_OVERLAPPED.
-  // TFile should be a subclass of AsyncFile.
-  template<class TFile = AsyncFile, class ...Args>
-  TFile make(HANDLE fileHandle, Args &&...args) {
+private:
+  wscoro::Task<> enterIOThread();
+
+  class FileBase;
+  void registerFile(FileBase &file);
+
+public:
+  class FileBase {
+  protected:
+    friend class CorIO;
+
+    CompletionKey _key;
+    wil::unique_hfile _file;
+    OVERLAPPED _overlapped;
+
+    void prepareOverlapped() noexcept {
+      _overlapped.Internal = 0;
+      _overlapped.InternalHigh = 0;
+      _overlapped.hEvent = nullptr;
+    }
+
+    explicit FileBase(CorIO &corio, wil::unique_hfile file);
+
+    size_t offset() const noexcept {
+      return reinterpret_cast<size_t>(_overlapped.Pointer);
+    }
+
+    size_t setOffset(size_t offset) noexcept {
+      _overlapped.Pointer = reinterpret_cast<void *>(offset);
+      return offset;
+    }
+
+    size_t addOffset(size_t offset) noexcept {
+      // Check overflow.
+      assert(offset <= std::numeric_limits<size_t>::max() - this->offset());
+      return setOffset(this->offset() + offset);
+    }
+
+    size_t addOffset(ptrdiff_t offset) noexcept {
+      if (offset < 0) {
+        // Check overflow.
+        assert(static_cast<size_t>(-offset) <= this->offset());
+        return setOffset(this->offset() - static_cast<size_t>(-offset));
+      } else {
+        return addOffset(static_cast<size_t>(offset));
+      }
+    }
+
+    wscoro::Task<size_t> write(std::string_view buffer);
+  };
+
+  class File : public FileBase {
+  public:
+    explicit File(CorIO &corio, wil::unique_hfile file)
+      : FileBase(corio, std::move(file))
+    {}
+
+    size_t size() const;
+    wscoro::Task<size_t> read(std::string &buffer, size_t maxBytes = 0);
+  };
+
+  class Pipe : public FileBase {
+  public:
+    explicit Pipe(CorIO &corio, wil::unique_hfile file)
+      : FileBase(corio, std::move(file))
+    {}
+
+    wscoro::Task<size_t> read(std::string &buffer);
+  };
+
+  /// Moves ownership of fileHandle into the returned object. The file is
+  /// registered with the associated IO completion port by FileBase::FileBase.
+  /// \param TFile Should be a subclass of FileBase.
+  /// \param fileHandle A file opened with FILE_FLAG_OVERLAPPED.
+  /// \param args Any other TFile constructor arguments.
+  template<class TFile, class ...Args>
+  std::enable_if_t<std::is_base_of_v<FileBase, TFile>, TFile>
+  make(HANDLE fileHandle, Args &&...args) {
     return TFile{*this, wil::unique_hfile{fileHandle},
                  std::forward<Args>(args)...};
   }
@@ -143,12 +151,12 @@ public:
   // Opens a file with GENERIC_READ, FILE_SHARE_READ, OPEN_EXISTING, and
   // flags | FILE_FLAG_OVERLAPPED. For other configurations use CreateFile
   // directly.
-  AsyncFile openForReading(const wchar_t *path, DWORD flags = 0);
+  File openForReading(const wchar_t *path, DWORD flags = 0);
 
   // Opens a file with GENERIC_WRITE, no sharing, OPEN_ALWAYS, and
   // flags | FILE_FLAG_OVERLAPPED. For other configurations use CreateFile
   // directly.
-  AsyncFile openForWriting(const wchar_t *path, DWORD flags = 0);
+  File openForWriting(const wchar_t *path, DWORD flags = 0);
 };
 
 } // namespace wsudo

@@ -185,11 +185,20 @@ wscoro::FireAndForget Server::Connection::run() {
 
 wscoro::Task<bool> Server::Connection::read() {
   _buffer.clear();
-  co_return co_await readToEnd(_buffer);
+  try {
+    co_await Pipe::read(_buffer);
+    co_return true;
+  } catch (...) {
+    co_return false;
+  }
 }
 
 wscoro::Task<bool> Server::Connection::respond() {
-  bool result = co_await write(_buffer);
-  clear();
-  co_return result;
+  WSUDO_SCOPEEXIT_THIS { clear(); };
+  try {
+    co_await write(_buffer);
+    co_return true;
+  } catch (...) {
+    co_return false;
+  }
 }
