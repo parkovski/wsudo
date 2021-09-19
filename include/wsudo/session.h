@@ -2,6 +2,12 @@
 #define WSUDO_SESSION_H
 
 #include "wsudo.h"
+#ifdef WSUDO_NO_NT_API
+# include <NTSecAPI.h>
+// wil thinks this needs to be defined for the LSA types, but MSDN says to
+// use NTSecAPI instead, which doesn't include this header.
+# define _NTLSA_
+#endif
 
 #include <wil/resource.h>
 
@@ -10,15 +16,22 @@
 #include <string_view>
 #include <memory>
 
-namespace wsudo::session {
+namespace wsudo {
 
 class Session;
 
 class SessionManager {
+  unsigned _defaultTtlSeconds;
+  wil::unique_handle _timer;
+  std::wstring _localDomain;
+  std::unordered_map<std::wstring_view, std::shared_ptr<Session>> _sessions;
+
 public:
-  explicit SessionManager(unsigned defaultTtlSeconds) noexcept;
+  explicit SessionManager(unsigned defaultTtlSeconds = 0) noexcept;
+
   SessionManager(const SessionManager &) = delete;
   SessionManager &operator=(const SessionManager &) = delete;
+
   SessionManager(SessionManager &&) = default;
   SessionManager &operator=(SessionManager &&) = default;
 
@@ -36,11 +49,6 @@ public:
 
 private:
   std::shared_ptr<Session> store(Session &&session);
-
-  unsigned _defaultTtlSeconds;
-  wil::unique_handle _timer;
-  std::wstring _localDomain;
-  std::unordered_map<std::wstring_view, std::shared_ptr<Session>> _sessions;
 };
 
 class Session {
@@ -94,6 +102,6 @@ private:
   unsigned _ttlExpiresSeconds;
 };
 
-} // namespace wsudo::session
+} // namespace wsudo
 
 #endif // WSUDO_SESSION_H_

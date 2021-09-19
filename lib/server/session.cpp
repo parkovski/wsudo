@@ -1,37 +1,38 @@
 #define WSUDO_NO_NT_API
 #include "wsudo/session.h"
-#include <NTSecAPI.h>
 #include <cstdlib>
 
 #define NT_SUCCESS(status) ((long)(status) >= 0)
 
 using namespace wsudo;
-using namespace wsudo::session;
 
 SessionManager::SessionManager(unsigned defaultTtlSeconds) noexcept
   : _defaultTtlSeconds{defaultTtlSeconds},
     _timer{CreateWaitableTimerW(nullptr, false, nullptr)}
 {
   NTSTATUS status;
-  LSA_OBJECT_ATTRIBUTES attr{{}};
-  Handle<LSA_HANDLE, LsaClose> policy;
+  LSA_OBJECT_ATTRIBUTES attr{};
+  wil::unique_hlsa policy;
 
   status = LsaOpenPolicy(nullptr, &attr, POLICY_VIEW_LOCAL_INFORMATION,
-                         &policy);
+                         policy.put());
   if (!NT_SUCCESS(status)) {
     log::error("LsaOpenPolicy failed: {}",
                lastErrorString(LsaNtStatusToWinError(status)));
     return;
   }
 
-  Handle<PPOLICY_ACCOUNT_DOMAIN_INFO, LsaFreeMemory> accountDomain;
-  status = LsaQueryInformationPolicy(policy, PolicyAccountDomainInformation,
-                                     reinterpret_cast<void **>(&accountDomain));
+  PPOLICY_ACCOUNT_DOMAIN_INFO accountDomain;
+  status = LsaQueryInformationPolicy(
+    policy.get(), PolicyAccountDomainInformation,
+    reinterpret_cast<void **>(&accountDomain)
+  );
   if (!NT_SUCCESS(status)) {
     log::error("LsaQueryInformationPolicy failed: {}",
                 lastErrorString(LsaNtStatusToWinError(status)));
     return;
   }
+  WSUDO_SCOPEEXIT { LsaFreeMemory(accountDomain); };
 
   // Note: Length is the size in bytes, not including terminating null (if any).
   // wstring constructor expects a length in wchar_t sized characters.

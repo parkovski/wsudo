@@ -3,6 +3,8 @@
 
 #include "wsudo.h"
 #include "corio.h"
+#include "session.h"
+#include "message.h"
 
 #include <memory>
 #include <type_traits>
@@ -31,6 +33,8 @@ private:
   int _activeConnections = 0;
   void *_quitHandle = nullptr;
 
+  SessionManager _sessionManager;
+
   HRESULT initSecurity() noexcept;
   HANDLE initPipe(bool first = false);
 
@@ -40,7 +44,7 @@ public:
   HRESULT operator()(int nUserThreads = 0, int nSystemThreads = 0);
   void quit();
 
-  wscoro::Task<bool> run(Connection &conn);
+  wscoro::Task<bool> onConnect(Connection &conn);
 
 private:
   wscoro::Task<bool> dispatch(Connection &conn);

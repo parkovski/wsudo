@@ -103,7 +103,7 @@ void Server::quit() {
   }
 }
 
-wscoro::Task<bool> Server::run(Connection &conn) {
+wscoro::Task<bool> Server::onConnect(Connection &conn) {
   if (!co_await conn.read()) {
     co_return true;
   }
@@ -127,6 +127,8 @@ wscoro::Task<bool> Server::dispatch(Connection &conn) {
   co_await conn.respond();
   co_return true;
 }
+
+// ===== Connection =====
 
 wscoro::Task<bool> Server::Connection::connect() {
   _overlapped.Internal = 0;
@@ -177,7 +179,7 @@ bool Server::Connection::disconnect() {
 wscoro::FireAndForget Server::Connection::run() {
   while (
        co_await connect()
-    && co_await _server->run(*this)
+    && co_await _server->onConnect(*this)
     && disconnect()
   );
   clear();
