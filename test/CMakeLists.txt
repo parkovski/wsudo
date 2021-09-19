@@ -2,6 +2,7 @@ find_package(Catch2 3.0 REQUIRED)
 
 set(SOURCES
   test.cpp
+  message.cpp
   user.cpp
   corio.cpp
 )
