@@ -14,10 +14,11 @@ void CorIO::listener() noexcept {
 
   while (true) {
     log::trace("IOCP waiting on completion port.");
+    DWORD err = ERROR_SUCCESS;
     if (!GetQueuedCompletionStatus(_ioCompletionPort.get(), &bytes,
                                    reinterpret_cast<PULONG_PTR>(&key),
                                    &overlapped, INFINITE)) {
-      auto err = GetLastError();
+      err = GetLastError();
       if (!overlapped) {
         if (err == ERROR_ABANDONED_WAIT_0) {
           // Completion port closed.
@@ -42,7 +43,7 @@ void CorIO::listener() noexcept {
           default:
             // Other IO error.
             log::error("IOCP err=0x{:X} {}", err, lastErrorString(err));
-            return;
+            break;
         }
       }
     } else if (overlapped == _quitFlag) {
@@ -51,7 +52,7 @@ void CorIO::listener() noexcept {
     }
 
     auto coroutine = key->coroutine;
-    key->bytesTransferred = bytes;
+    key->result = err;
     log::debug("IOCP {} bytes transferred; resuming coroutine.", bytes);
     try {
       coroutine.resume();

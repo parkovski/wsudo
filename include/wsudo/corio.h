@@ -24,8 +24,8 @@ public:
     union {
       /// In - coroutine handle to resume when IO completes.
       std::coroutine_handle<> coroutine;
-      /// Out - number of bytes transferred.
-      DWORD bytesTransferred;
+      /// Out - ERROR_SUCCESS if the request succeeded, or GetLastError().
+      DWORD result;
     };
 
     CompletionKey() noexcept

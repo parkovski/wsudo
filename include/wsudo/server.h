@@ -44,12 +44,8 @@ public:
   HRESULT operator()(int nUserThreads = 0, int nSystemThreads = 0);
   void quit();
 
-  wscoro::Task<bool> onConnect(Connection &conn);
-
-private:
   wscoro::Task<bool> dispatch(Connection &conn);
 
-public:
   class Connection : private CorIO::Pipe {
     Server *_server;
     std::string _buffer;
@@ -74,8 +70,8 @@ public:
     std::string &buffer() noexcept { return _buffer; }
     std::string &append(std::string_view str) { return _buffer.append(str); }
 
-    wscoro::Task<bool> read();
-    wscoro::Task<bool> respond();
+    wscoro::Task<> send(const Message &message);
+    wscoro::Task<Message> recv();
   };
 };
 

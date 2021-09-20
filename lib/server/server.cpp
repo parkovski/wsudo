@@ -103,28 +103,26 @@ void Server::quit() {
   }
 }
 
-wscoro::Task<bool> Server::onConnect(Connection &conn) {
-  if (!co_await conn.read()) {
-    co_return true;
-  }
-  co_return co_await dispatch(conn);
-}
-
 wscoro::Task<bool> Server::dispatch(Connection &conn) {
-  auto &buf = conn.buffer();
-  if (buf.size() < 4) {
-    log::warn("Server found no message header.");
-    conn.clear().append(msg::server::InvalidMessage);
-    co_await conn.respond();
-    co_return true;
+  while (true) {
+    auto message = co_await conn.recv();
+
+    std::string_view header{msg::Invalid::code};
+    if (conn.buffer().length() >= 4) {
+      header = std::string_view{conn.buffer()}.substr(0, 4);
+    }
+    log::debug("Received message {}.", header);
+
+    if (std::holds_alternative<msg::QuerySession>(message)) {
+      co_await conn.send(msg::Failure{});
+    } else if (std::holds_alternative<msg::Credential>(message)) {
+      co_await conn.send(msg::AccessDenied{});
+    } else {
+      co_await conn.send(msg::Invalid{});
+      break;
+    }
   }
 
-  char header[4] = {buf[0], buf[1], buf[2], buf[3]};
-  std::string_view header_s{header, 4};
-  //uint32_t msgid = *reinterpret_cast<uint32_t *>(header);
-  log::debug("Received message {}.", header_s);
-  conn.clear().append(msg::server::AccessDenied);
-  co_await conn.respond();
   co_return true;
 }
 
@@ -179,28 +177,21 @@ bool Server::Connection::disconnect() {
 wscoro::FireAndForget Server::Connection::run() {
   while (
        co_await connect()
-    && co_await _server->onConnect(*this)
+    && co_await _server->dispatch(*this)
     && disconnect()
   );
   clear();
 }
 
-wscoro::Task<bool> Server::Connection::read() {
-  _buffer.clear();
-  try {
-    co_await Pipe::read(_buffer);
-    co_return true;
-  } catch (...) {
-    co_return false;
-  }
+wscoro::Task<> Server::Connection::send(const Message &message) {
+  clear();
+  message.serialize(_buffer);
+  WSUDO_SCOPEEXIT_THIS { clear(); };
+  co_await write(_buffer);
 }
 
-wscoro::Task<bool> Server::Connection::respond() {
-  WSUDO_SCOPEEXIT_THIS { clear(); };
-  try {
-    co_await write(_buffer);
-    co_return true;
-  } catch (...) {
-    co_return false;
-  }
+wscoro::Task<Message> Server::Connection::recv() {
+  clear();
+  co_await read(_buffer);
+  co_return Message{_buffer};
 }
