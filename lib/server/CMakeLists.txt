@@ -1,4 +1,5 @@
 set(SOURCES
+  connection.cpp
   server.cpp
   session.cpp
 )
