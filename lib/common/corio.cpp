@@ -273,6 +273,14 @@ wscoro::Task<size_t> CorIO::File::read(std::string &buffer, size_t maxBytes) {
 
 // ===== Pipe =====
 
+DWORD CorIO::Pipe::clientProcessId() const noexcept {
+  ULONG pid;
+  if (GetNamedPipeClientProcessId(_file.get(), &pid)) {
+    return (DWORD)pid;
+  }
+  return (DWORD)(-1);
+}
+
 wscoro::Task<size_t> CorIO::Pipe::read(std::string &buffer) {
   const size_t chunkSize = 256;
   char chunk[chunkSize];

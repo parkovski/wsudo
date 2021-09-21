@@ -133,6 +133,8 @@ public:
       : FileBase(corio, std::move(file))
     {}
 
+    // Returns -1 on failure, otherwise returns the client process ID.
+    DWORD clientProcessId() const noexcept;
     wscoro::Task<size_t> read(std::string &buffer);
   };
 

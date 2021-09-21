@@ -1,4 +1,5 @@
 #include "wsudo/server.h"
+#include "wsudo/tokenmanager.h"
 
 #pragma comment(lib, "Advapi32.lib")
 
@@ -113,7 +114,22 @@ wscoro::Task<bool> Server::dispatch(Connection &conn) {
     log::debug("Received message {}.", header);
 
     if (std::holds_alternative<msg::QuerySession>(message)) {
-      co_await conn.send(msg::Failure{});
+      co_await conn.send(msg::Success{});
+      message = co_await conn.recv();
+      if (std::holds_alternative<msg::Bless>(message)) {
+        auto clientPid = conn.clientProcessId();
+        auto handle = std::get<msg::Bless>(message).hRemoteProcess;
+        TokenManager tm(clientPid);
+        if (tm.createServerToken() && tm.applyToken(handle)) {
+          message = msg::Success{};
+        } else {
+          message = msg::Failure{};
+        }
+      } else {
+        message = msg::Invalid{};
+      }
+      co_await conn.send(message);
+      break;
     } else if (std::holds_alternative<msg::Credential>(message)) {
       co_await conn.send(msg::AccessDenied{});
     } else {

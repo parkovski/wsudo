@@ -17,7 +17,7 @@ int wmain(int argc, wchar_t *argv[]) {
   }
 
   std::wstring pipename{PipeFullPath};
-  Client client(pipename, argc - 2, argv + 2);
+  Client client(pipename, argc - 1, argv + 1);
   log::debug("Client initialized");
   return (int)client();
 }

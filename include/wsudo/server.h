@@ -59,6 +59,8 @@ public:
         _server{&server}
     {}
 
+    using Pipe::clientProcessId;
+
     wscoro::FireAndForget run();
 
     // Writes zeroes to the buffer before clearing.

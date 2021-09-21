@@ -112,8 +112,10 @@ bool Bless::parse(Message &m, std::string_view buffer) noexcept {
 }
 
 void Bless::serialize(std::string &buffer) const {
-  char *handle = static_cast<char *>(hRemoteProcess);
-  buffer.append(handle, handle + sizeof(void *));
+  //char *handle = static_cast<char *>(hRemoteProcess);
+  buffer.resize(4 + sizeof(void *));
+  *reinterpret_cast<void **>(buffer.data() + 4) = hRemoteProcess;
+  //buffer.append(handle, handle + sizeof(void *));
 }
 
 namespace {

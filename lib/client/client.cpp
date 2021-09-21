@@ -102,7 +102,9 @@ void Client::escapeCommandLineArg(std::wstring &arg) {
 std::wstring Client::createCommandLine() const {
   std::wstring cl{_program};
   std::wstring arg;
+  log::debug(L"program: {}", cl);
   escapeCommandLineArg(cl);
+  log::debug(L"program: {}", cl);
   for (int i = 0; i < _argc1; ++i) {
     arg = _argv1[i];
     escapeCommandLineArg(arg);
@@ -125,6 +127,7 @@ Client::createSuspendedProcess() const {
   std::wstring commandLine{createCommandLine()};
   // The system is allowed to modify this string, so we can't use c_str as it
   // returns a const pointer.
+  commandLine.push_back(L'\0');
   commandLine.push_back(L'\0');
   if (!CreateProcess(nullptr, commandLine.data(), nullptr, nullptr, true,
                      CREATE_UNICODE_ENVIRONMENT | CREATE_SUSPENDED,
