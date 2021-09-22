@@ -112,10 +112,10 @@ bool Bless::parse(Message &m, std::string_view buffer) noexcept {
 }
 
 void Bless::serialize(std::string &buffer) const {
-  //char *handle = static_cast<char *>(hRemoteProcess);
+  // string seems to not like using append here. Probably should switch to
+  // vector<char> for the buffer.
   buffer.resize(4 + sizeof(void *));
   *reinterpret_cast<void **>(buffer.data() + 4) = hRemoteProcess;
-  //buffer.append(handle, handle + sizeof(void *));
 }
 
 namespace {

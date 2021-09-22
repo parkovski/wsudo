@@ -210,5 +210,5 @@ HRESULT Client::operator()() {
     return ERROR_ACCESS_DENIED;
   }
 
-  return (HRESULT)resume(pi, false);
+  return (HRESULT)resume(pi, true);
 }

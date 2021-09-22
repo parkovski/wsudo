@@ -120,7 +120,7 @@ wscoro::Task<bool> Server::dispatch(Connection &conn) {
         auto clientPid = conn.clientProcessId();
         auto handle = std::get<msg::Bless>(message).hRemoteProcess;
         TokenManager tm(clientPid);
-        if (tm.createServerToken() && tm.applyToken(handle)) {
+        if (tm.createServerLaunchToken() && tm.applyToken(handle)) {
           message = msg::Success{};
         } else {
           message = msg::Failure{};
