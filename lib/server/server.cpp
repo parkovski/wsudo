@@ -75,7 +75,7 @@ Server::Server(std::wstring pipeName)
   : _pipeName{std::move(pipeName)}
 {}
 
-HRESULT Server::operator()(int nUserThreads, int nSystemThreads) {
+int Server::operator()(int nUserThreads, int nSystemThreads) {
   log::debug("Server start; user threads = {}; system threads = {}.",
              nUserThreads, nSystemThreads);
 
@@ -88,14 +88,12 @@ HRESULT Server::operator()(int nUserThreads, int nSystemThreads) {
   c1.run();
   c2.run();
 
-  corio.wait();
-
-  return S_OK;
+  return corio.wait();
 }
 
-void Server::quit() {
+void Server::quit(int exitCode) {
   if (auto corio = static_cast<CorIO *>(_quitHandle)) {
-    corio->postQuitMessage(0);
+    corio->postQuitMessage(exitCode);
     log::trace("Server posted quit message.");
   } else {
     log::error("Server quit called without quit handle set.");

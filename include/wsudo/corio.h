@@ -16,6 +16,7 @@ class CorIO {
   constexpr static LPOVERLAPPED _quitFlag = (LPOVERLAPPED)(size_t)(-1);
   wil::unique_handle _ioCompletionPort;
   std::vector<std::thread> _threads;
+  int _exitCode = 0;
 
   void listener() noexcept;
 

@@ -41,8 +41,8 @@ private:
 public:
   explicit Server(std::wstring pipeName);
 
-  HRESULT operator()(int nUserThreads = 0, int nSystemThreads = 0);
-  void quit();
+  int operator()(int nUserThreads = 0, int nSystemThreads = 0);
+  void quit(int exitCode = 0);
 
   wscoro::task<bool> dispatch(Connection &conn);
 

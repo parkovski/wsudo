@@ -17,12 +17,15 @@ using namespace wsudo;
 static Server *g_server = nullptr;
 BOOL WINAPI consoleControlHandler(DWORD event) {
   const char *eventName;
+  int exitCode = 0;
   switch (event) {
   case CTRL_C_EVENT:
     eventName = "Ctrl-C";
+    exitCode = STATUS_CONTROL_C_EXIT;
     break;
   case CTRL_BREAK_EVENT:
     eventName = "Ctrl-Break";
+    exitCode = STATUS_CONTROL_C_EXIT;
     break;
   case CTRL_CLOSE_EVENT:
     eventName = "close";
@@ -39,7 +42,7 @@ BOOL WINAPI consoleControlHandler(DWORD event) {
 
   log::info("Received {} event, quitting.", eventName);
   if (g_server) {
-    g_server->quit();
+    g_server->quit(exitCode);
     // If this attempt fails, next time we will hit the terminate() path.
     g_server = nullptr;
   } else {
@@ -93,5 +96,5 @@ int wmain(int argc, wchar_t *argv[]) {
 
   Server server{PipeFullPath};
   g_server = &server;
-  return static_cast<int>(server(2));
+  return server(2);
 }

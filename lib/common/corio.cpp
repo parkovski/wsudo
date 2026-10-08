@@ -49,6 +49,7 @@ void CorIO::listener() noexcept {
       }
     } else if (overlapped == _quitFlag) {
       log::debug("IOCP quit message, exitCode={}.", bytes);
+      _exitCode = (int)bytes;
       return;
     }
 
@@ -74,9 +75,8 @@ CorIO::CorIO(int nSystemThreads)
 }
 
 CorIO::~CorIO() {
-  log::trace("CorIO finish.");
-  postQuitMessage(std::uncaught_exceptions());
-  wait();
+  auto exceptions = std::uncaught_exceptions();
+  log::debug("CorIO finished with {} uncaught exceptions.", exceptions);
 }
 
 void CorIO::run(int nUserThreads) {
@@ -95,7 +95,8 @@ void CorIO::run(int nUserThreads) {
 
 int CorIO::wait() {
   if (!_threads.size()) {
-    return -1;
+    log::trace("CorIO::wait() called but there are no active threads.");
+    return 0x00000122; //STATUS_NOTHING_TO_TERMINATE
   }
 
   log::debug("CorIO wait for {} threads.", _threads.size());
@@ -108,10 +109,11 @@ int CorIO::wait() {
 
   _threads.clear();
 
-  return 0;
+  return _exitCode;
 }
 
 void CorIO::postQuitMessage(int exitCode) {
+  log::debug("CorIO posting quit message with exit code {}.", exitCode);
   for (int i = 0; i < _threads.size(); ++i) {
     PostQueuedCompletionStatus(_ioCompletionPort.get(), exitCode, 0,
                                _quitFlag);
