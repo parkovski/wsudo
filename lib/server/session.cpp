@@ -32,7 +32,7 @@ SessionManager::SessionManager(unsigned defaultTtlSeconds) noexcept
                 lastErrorString(LsaNtStatusToWinError(status)));
     return;
   }
-  WSUDO_SCOPEEXIT { LsaFreeMemory(accountDomain); };
+  WSUDO_SCOPE_EXIT { LsaFreeMemory(accountDomain); };
 
   // Note: Length is the size in bytes, not including terminating null (if any).
   // wstring constructor expects a length in wchar_t sized characters.

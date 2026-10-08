@@ -67,13 +67,13 @@ namespace detail {
 #define WSUDO_CONCAT2(a,b) WSUDO_CONCAT_IMPL(a,b)
 
 // Scope destructor.
-// Usage: WSUDO_SCOPEEXIT { capture-by-ref lambda body };
-#define WSUDO_SCOPEEXIT \
+// Usage: WSUDO_SCOPE_EXIT { capture-by-ref lambda body };
+#define WSUDO_SCOPE_EXIT \
   [[maybe_unused]] auto const &WSUDO_CONCAT2(_scopeExit_, __LINE__) = \
     ::wsudo::detail::ScopeExitHelper{} % [&]()
 
 // Scope destructor that captures the this pointer by value.
-#define WSUDO_SCOPEEXIT_THIS \
+#define WSUDO_SCOPE_EXIT_THIS \
   [[maybe_unused]] auto const &WSUDO_CONCAT2(_scopeExit_, __LINE__) = \
     ::wsudo::detail::ScopeExitHelper{} % [&, this]()
 

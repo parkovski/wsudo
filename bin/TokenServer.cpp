@@ -75,7 +75,7 @@ int wmain(int argc, wchar_t *argv[]) {
                  ENABLE_VIRTUAL_TERMINAL_PROCESSING);
 
   // Restore console modes on exit.
-  WSUDO_SCOPEEXIT {
+  WSUDO_SCOPE_EXIT {
     SetConsoleMode(hStdin, stdinMode);
     SetConsoleMode(hStdout, stdoutMode);
   };

@@ -11,7 +11,7 @@ using namespace wsudo;
 bool TokenManager::logon(const std::wstring &domain,
                          const std::wstring &username,
                          std::wstring &password) {
-  WSUDO_SCOPEEXIT {
+  WSUDO_SCOPE_EXIT {
     password.assign(password.length(), L'\0');
     password.clear();
   };

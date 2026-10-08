@@ -46,10 +46,10 @@ bool Client::readConsolePassword(std::string &password) const {
   DWORD previousInMode;
   GetConsoleMode(hStdIn, &previousInMode);
   SetConsoleMode(hStdIn, ENABLE_EXTENDED_FLAGS | ENABLE_QUICK_EDIT_MODE);
-  WSUDO_SCOPEEXIT { SetConsoleMode(hStdIn, previousInMode); };
+  WSUDO_SCOPE_EXIT { SetConsoleMode(hStdIn, previousInMode); };
 
   std::wstring wpassword;
-  WSUDO_SCOPEEXIT { wpassword.assign(wpassword.length(), L'\0'); };
+  WSUDO_SCOPE_EXIT { wpassword.assign(wpassword.length(), L'\0'); };
   while (true) {
     // TODO: Some characters are 2 wchars. Backspace should handle this. Also
     // should they be read 2 at a time?
@@ -270,7 +270,7 @@ HRESULT Client::operator()() {
 
   if (!userHasActiveSession()) {
     std::string password;
-    WSUDO_SCOPEEXIT { password.assign(password.length(), '\0'); };
+    WSUDO_SCOPE_EXIT { password.assign(password.length(), '\0'); };
     if (!readConsolePassword(password)) {
       return ERROR_CANCELLED;
     }
@@ -285,7 +285,7 @@ HRESULT Client::operator()() {
     // handling here.
     return ERROR_NO_PROC_SLOTS;
   }
-  WSUDO_SCOPEEXIT {
+  WSUDO_SCOPE_EXIT {
     CloseHandle(pi.hThread);
     CloseHandle(pi.hProcess);
   };

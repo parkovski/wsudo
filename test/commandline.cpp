@@ -26,7 +26,7 @@ struct ClientTest {
                                    PIPE_ACCESS_DUPLEX, PIPE_TYPE_BYTE, 2,
                                    128, 128, 0, nullptr);
     REQUIRE(pipe != INVALID_HANDLE_VALUE);
-    WSUDO_SCOPEEXIT { CloseHandle(pipe); };
+    WSUDO_SCOPE_EXIT { CloseHandle(pipe); };
     wsudo::Client client{L"\\\\.\\pipe\\wsudo_test_pipe"s, 5, argv};
     auto cl = client.createCommandLine();
     REQUIRE(cl == L"\"C:\\Program Files\\My Program\\program.exe\" -x \"foo bar\" \"\\\"\\\\test\\\"\" \"\\\\\\\"foo bar\\\"\\\\\""s);

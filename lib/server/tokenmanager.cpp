@@ -118,7 +118,7 @@ bool TokenManager::createLaunchToken(HANDLE baseToken, DWORD mandatoryLevel) {
                GetLastError(), lastErrorString());
     return false;
   }
-  WSUDO_SCOPEEXIT { LocalFree(secDesc); };
+  WSUDO_SCOPE_EXIT { LocalFree(secDesc); };
 
   if (mandatoryLevel) {
     if (!sacl) {
