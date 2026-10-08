@@ -103,7 +103,7 @@ void Server::quit() {
   }
 }
 
-wscoro::Task<bool> Server::dispatch(Connection &conn) {
+wscoro::task<bool> Server::dispatch(Connection &conn) {
   while (true) {
     auto message = co_await conn.recv();
 

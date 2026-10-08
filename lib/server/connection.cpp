@@ -2,7 +2,7 @@
 
 using namespace wsudo;
 
-wscoro::Task<bool> Server::Connection::connect() {
+wscoro::task<bool> Server::Connection::connect() {
   _overlapped.Internal = 0;
   _overlapped.InternalHigh = 0;
   _overlapped.Pointer = nullptr;
@@ -48,7 +48,7 @@ bool Server::Connection::disconnect() {
   return false;
 }
 
-wscoro::FireAndForget Server::Connection::run() {
+wscoro::fire_and_forget Server::Connection::run() {
   while (
        co_await connect()
     && co_await _server->dispatch(*this)
@@ -57,14 +57,14 @@ wscoro::FireAndForget Server::Connection::run() {
   clear();
 }
 
-wscoro::Task<> Server::Connection::send(const Message &message) {
+wscoro::task<> Server::Connection::send(const Message &message) {
   clear();
   message.serialize(_buffer);
   WSUDO_SCOPEEXIT_THIS { clear(); };
   co_await write(_buffer);
 }
 
-wscoro::Task<Message> Server::Connection::recv() {
+wscoro::task<Message> Server::Connection::recv() {
   clear();
   co_await read(_buffer);
   co_return Message{_buffer};

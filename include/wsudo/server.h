@@ -44,13 +44,13 @@ public:
   HRESULT operator()(int nUserThreads = 0, int nSystemThreads = 0);
   void quit();
 
-  wscoro::Task<bool> dispatch(Connection &conn);
+  wscoro::task<bool> dispatch(Connection &conn);
 
   class Connection : private CorIO::Pipe {
     Server *_server;
     std::string _buffer;
 
-    wscoro::Task<bool> connect();
+    wscoro::task<bool> connect();
     bool disconnect();
 
   public:
@@ -61,7 +61,7 @@ public:
 
     using Pipe::clientProcessId;
 
-    wscoro::FireAndForget run();
+    wscoro::fire_and_forget run();
 
     // Writes zeroes to the buffer before clearing.
     std::string &clear() noexcept {
@@ -72,8 +72,8 @@ public:
     std::string &buffer() noexcept { return _buffer; }
     std::string &append(std::string_view str) { return _buffer.append(str); }
 
-    wscoro::Task<> send(const Message &message);
-    wscoro::Task<Message> recv();
+    wscoro::task<> send(const Message &message);
+    wscoro::task<Message> recv();
   };
 };
 

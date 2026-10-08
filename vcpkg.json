@@ -10,6 +10,17 @@
     },
     "wil"
   ],
+  "features": {
+    "test": {
+      "description": "Build tests",
+      "dependencies": [
+        {
+          "name": "catch2",
+          "host": true
+        }
+      ]
+    }
+  },
   "$get-this-yourself": "https://github.com/parkovski/wscoro",
   "$required-for-tests": "catch2 v3"
 }

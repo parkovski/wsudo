@@ -7,7 +7,7 @@
 
 using namespace wsudo;
 
-wscoro::Task<> dothestuff(CorIO &corio, CorIO::File &file, std::string &buf) {
+wscoro::task<> dothestuff(CorIO &corio, CorIO::File &file, std::string &buf) {
   REQUIRE(co_await file.read(buf));
   corio.postQuitMessage(0);
 }
@@ -23,16 +23,16 @@ TEST_CASE("Coroutine IO", "[corio]") {
   auto file = corio.openForReading(gpl3_path, FILE_FLAG_SEQUENTIAL_SCAN);
 
   std::string buf;
-  auto task = ([&] () -> wscoro::Task<> {
+  auto task = ([&] () -> wscoro::task<> {
     co_await file.read(buf);
     corio.postQuitMessage(0);
   })();
-  REQUIRE(!task.await_ready());
+  REQUIRE(!task.operator co_await().await_ready());
   task.resume();
 
   corio.wait();
 
-  REQUIRE(task.await_ready());
+  REQUIRE(task.operator co_await().await_ready());
   auto size = buf.size();
   if (size == gpl3_size_lf || size == gpl3_size_crlf) {
     SUCCEED("Coroutine IO read the correct number of bytes.");

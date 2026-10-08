@@ -116,7 +116,7 @@ void CorIO::postQuitMessage(int exitCode) {
   }
 }
 
-wscoro::Task<> CorIO::enterIOThread() {
+wscoro::task<> CorIO::enterIOThread() {
   log::trace("CorIO will enter IO thread.");
   CompletionKey key{co_await wscoro::this_coroutine};
   if(!PostQueuedCompletionStatus(_ioCompletionPort.get(), 0,
@@ -146,7 +146,7 @@ CorIO::FileBase::FileBase(CorIO &corio, wil::unique_hfile file)
   corio.registerFile(*this);
 }
 
-wscoro::Task<size_t> CorIO::FileBase::write(std::string_view buffer) {
+wscoro::task<size_t> CorIO::FileBase::write(std::string_view buffer) {
   auto this_coro = co_await wscoro::this_coroutine;
 
   size_t bufferOffset = 0;
@@ -214,7 +214,7 @@ size_t CorIO::File::size() const {
   THROW_LAST_ERROR();
 }
 
-wscoro::Task<size_t> CorIO::File::read(std::string &buffer, size_t maxBytes) {
+wscoro::task<size_t> CorIO::File::read(std::string &buffer, size_t maxBytes) {
   const DWORD chunkSize = 32768;
   char chunk[chunkSize];
   auto this_coro = co_await wscoro::this_coroutine;
@@ -281,7 +281,7 @@ DWORD CorIO::Pipe::clientProcessId() const noexcept {
   return (DWORD)(-1);
 }
 
-wscoro::Task<size_t> CorIO::Pipe::read(std::string &buffer) {
+wscoro::task<size_t> CorIO::Pipe::read(std::string &buffer) {
   const size_t chunkSize = 256;
   char chunk[chunkSize];
   auto this_coro = co_await wscoro::this_coroutine;

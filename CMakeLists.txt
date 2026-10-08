@@ -1,5 +1,13 @@
 cmake_minimum_required(VERSION 3.20.0 FATAL_ERROR)
 
+if(NOT DEFINED CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE MATCHES "Deb")
+  set(BUILD_TESTING ON)
+endif()
+option(BUILD_TESTING "Build tests" OFF)
+if(BUILD_TESTING)
+  list(APPEND VCPKG_MANIFEST_FEATURES "test")
+endif()
+
 project(wsudo)
 set(wsudo_VERSION_MAJOR 0)
 set(wsudo_VERSION_MINOR 1)
@@ -9,11 +17,6 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-
-if(NOT DEFINED CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE MATCHES "Deb")
-  set(WSUDO_BUILD_TESTS ON)
-endif()
-option(WSUDO_BUILD_TESTS "Build tests" OFF)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
@@ -31,6 +34,6 @@ link_libraries(spdlog::spdlog fmt::fmt-header-only WIL::WIL)
 add_subdirectory(lib)
 add_subdirectory(bin)
 
-if(WSUDO_BUILD_TESTS)
+if(BUILD_TESTING)
   add_subdirectory(test)
 endif()

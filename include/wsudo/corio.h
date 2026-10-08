@@ -1,6 +1,6 @@
 #pragma once
 
-#include "wscoro/basictasks.h"
+#include "wscoro/wscoro.h"
 
 #define NOMINMAX
 #include <wil/resource.h>
@@ -51,14 +51,14 @@ public:
 
   /// Run `f` asynchronously on an IO thread.
   template<class F>
-  wscoro::FireAndForget postCallback(F f) {
+  wscoro::fire_and_forget postCallback(F f) {
     co_await enterIOThread();
     f();
   }
 
   /// Run `c` asynchronously on an IO thread.
   template<class C>
-  wscoro::FireAndForget postCoroutine(C c) {
+  wscoro::fire_and_forget postCoroutine(C c) {
     co_await enterIOThread();
     co_await c;
   }
@@ -67,7 +67,7 @@ public:
   void postQuitMessage(int exitCode);
 
 private:
-  wscoro::Task<> enterIOThread();
+  wscoro::task<> enterIOThread();
 
   class FileBase;
   void registerFile(FileBase &file);
@@ -114,7 +114,7 @@ public:
       }
     }
 
-    wscoro::Task<size_t> write(std::string_view buffer);
+    wscoro::task<size_t> write(std::string_view buffer);
   };
 
   class File : public FileBase {
@@ -124,7 +124,7 @@ public:
     {}
 
     size_t size() const;
-    wscoro::Task<size_t> read(std::string &buffer, size_t maxBytes = 0);
+    wscoro::task<size_t> read(std::string &buffer, size_t maxBytes = 0);
   };
 
   class Pipe : public FileBase {
@@ -135,7 +135,7 @@ public:
 
     // Returns -1 on failure, otherwise returns the client process ID.
     DWORD clientProcessId() const noexcept;
-    wscoro::Task<size_t> read(std::string &buffer);
+    wscoro::task<size_t> read(std::string &buffer);
   };
 
   /// Moves ownership of fileHandle into the returned object. The file is
