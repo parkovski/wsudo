@@ -6,6 +6,7 @@ set(SOURCES
   user.cpp
   corio.cpp
   unicode.cpp
+  commandline.cpp
 )
 
 add_executable(test ${SOURCES})
@@ -13,6 +14,7 @@ target_link_libraries(test
   Catch2::Catch2
   wsudo-common
   wsudo-server
+  wsudo-client
 )
 
 include(CTest)

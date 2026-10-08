@@ -8,6 +8,8 @@
 
 #include <vector>
 
+struct ClientTest;
+
 namespace wsudo {
 
 // Codes returned by client main indicating the reason for exiting.
@@ -110,6 +112,8 @@ private:
   std::string _domain;
   std::string _username;
 
+  friend struct ::ClientTest;
+
   // Fills _username and, if applicable, _domain.
   void lookupUsername();
 
@@ -119,7 +123,7 @@ private:
 
   bool resolveProgramPath();
 
-  static void escapeCommandLineArg(std::wstring &arg);
+  static std::wstring escapeCommandLineArg(std::wstring_view arg);
 
   std::wstring createCommandLine() const;
 
@@ -134,7 +138,7 @@ private:
   int resume(PROCESS_INFORMATION &pi, bool wait);
 
 public:
-  explicit Client(std::wstring &pipeName, int argc,
+  explicit Client(const std::wstring &pipeName, int argc,
                   const wchar_t *const *argv);
 
   HRESULT operator()();

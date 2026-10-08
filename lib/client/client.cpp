@@ -85,29 +85,110 @@ bool Client::resolveProgramPath() {
   return true;
 }
 
-// TODO: Does this cover everything?
-void Client::escapeCommandLineArg(std::wstring &arg) {
-  if (arg.find(L' ') != std::wstring::npos) {
-    arg.insert(arg.begin(), L'"');
-    arg.push_back(L'"');
+std::wstring Client::escapeCommandLineArg(std::wstring_view arg) {
+  std::wstring newarg;
+  bool hasSpace = false;
+  newarg.reserve(arg.size());
+
+  for (size_t i = 0; i < arg.size(); ++i) {
+    switch (arg[i]) {
+    case L' ':
+    case L'\t':
+    case L'\r':
+    case L'\n':
+      hasSpace = true;
+      break;
+    }
   }
-  size_t lastQuote = 0;
-  while ((lastQuote = arg.find(L'"', lastQuote)) != std::wstring::npos) {
-    arg.insert(arg.begin() + lastQuote, L'"');
-    // There are now 2 quotes that need to be skipped.
-    lastQuote += 2;
+
+  if (hasSpace) {
+    newarg.push_back(L'"');
   }
+  for (size_t i = 0; i < arg.size(); ++i) {
+    switch (arg[i]) {
+    case L'"':
+      if (hasSpace) {
+        newarg.append(L"\\\"");
+      } else {
+        newarg.append(L"\"\\\"");
+        while (++i < arg.size()) {
+          switch (arg[i]) {
+          case L'"':
+            newarg.append(L"\\\"");
+            break;
+
+          case L'\\':
+            newarg.append(L"\\\\");
+            break;
+
+          default:
+            newarg.push_back(arg[i]);
+            break;
+          }
+        }
+        --i;
+        newarg.push_back(L'"');
+      }
+      break;
+
+    case L'\\':
+      {
+        size_t j = i + 1;
+        while (j < arg.size() && arg[j] == L'\\') {
+          ++j;
+        }
+        if (j < arg.size() && arg[j] == '"') {
+          if (!hasSpace) {
+            newarg.push_back(L'"');
+          }
+          for (size_t k = i; k < j; ++k) {
+            newarg.append(L"\\\\");
+          }
+          while (j < arg.size()) {
+            switch (arg[j]) {
+            case L'"':
+              newarg.append(L"\\\"");
+              break;
+
+            case L'\\':
+              newarg.append(L"\\\\");
+              break;
+
+            default:
+              newarg.push_back(arg[j]);
+              break;
+            }
+            ++j;
+          }
+          if (!hasSpace) {
+            newarg.push_back(L'"');
+          }
+        } else {
+          for (size_t k = i; k < j; ++k) {
+            newarg.push_back(L'\\');
+          }
+        }
+        i = j - 1;
+      }
+      break;
+
+    default:
+      newarg.push_back(arg[i]);
+      break;
+    }
+  }
+  if (hasSpace) {
+    newarg.push_back('"');
+  }
+
+  return newarg;
 }
 
 std::wstring Client::createCommandLine() const {
-  std::wstring cl{_program};
+  std::wstring cl{escapeCommandLineArg(_program)};
   std::wstring arg;
-  log::debug(L"program: {}", cl);
-  escapeCommandLineArg(cl);
-  log::debug(L"program: {}", cl);
   for (int i = 0; i < _argc1; ++i) {
-    arg = _argv1[i];
-    escapeCommandLineArg(arg);
+    arg = escapeCommandLineArg(_argv1[i]);
     cl.push_back(L' ');
     cl.append(arg);
   }
@@ -172,8 +253,12 @@ int Client::resume(PROCESS_INFORMATION &pi, bool wait) {
   return static_cast<int>(exitCode);
 }
 
-Client::Client(std::wstring &pipeName, int argc, const wchar_t *const *argv)
-  : _conn{pipeName}, _program{argv[0]}, _argc1{argc - 1}, _argv1{argv + 1}
+Client::Client(const std::wstring &pipeName, int argc,
+               const wchar_t *const *argv)
+  : _conn{pipeName}
+  , _program{argv[0]}
+  , _argc1{argc - 1}
+  , _argv1{argv + 1}
 {
   lookupUsername();
 }
