@@ -1,7 +1,5 @@
 #include "wsudo/wsudo.h"
 
-#include <codecvt>
-
 namespace wsudo {
 
 #pragma warning(push)
@@ -12,8 +10,15 @@ std::string to_utf8(std::wstring_view utf16str) {
     return std::string{};
   }
 
-  return std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>, wchar_t>{}
-          .to_bytes(&utf16str.front(), &utf16str.back() + 1);
+  int size = WideCharToMultiByte(CP_UTF8, 0, utf16str.data(), utf16str.size(),
+                                 nullptr, 0, nullptr, nullptr);
+
+  std::string utf8str;
+  utf8str.resize(size);
+  WideCharToMultiByte(CP_UTF8, 0, utf16str.data(), utf16str.size(),
+                      utf8str.data(), size, nullptr, nullptr);
+
+  return utf8str;
 }
 
 std::wstring to_utf16(std::string_view utf8str) {
@@ -21,8 +26,15 @@ std::wstring to_utf16(std::string_view utf8str) {
     return std::wstring{};
   }
 
-  return std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>, wchar_t>{}
-            .from_bytes(&utf8str.front(), &utf8str.back() + 1);
+  int size = MultiByteToWideChar(CP_UTF8, 0, utf8str.data(), utf8str.size(),
+                                 nullptr, 0);
+
+  std::wstring utf16str;
+  utf16str.resize(size);
+  MultiByteToWideChar(CP_UTF8, 0, utf8str.data(), utf8str.size(),
+                      utf16str.data(), size);
+
+  return utf16str;
 }
 
 #pragma warning(pop)

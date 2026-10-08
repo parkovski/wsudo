@@ -5,6 +5,7 @@ set(SOURCES
   message.cpp
   user.cpp
   corio.cpp
+  unicode.cpp
 )
 
 add_executable(test ${SOURCES})
