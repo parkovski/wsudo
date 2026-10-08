@@ -56,5 +56,23 @@ std::string lastErrorString(DWORD status) {
   return std::string{buffer, buffer + size};
 }
 
+std::wstring lastErrorWString(DWORD status) {
+  constexpr DWORD bufferSize = 1024;
+  wchar_t buffer[bufferSize];
+  // MSDN: Need to specify IGNORE_INSERTS with FROM_SYSTEM to avoid potential
+  // bad memory access.
+  auto size = FormatMessageW(FORMAT_MESSAGE_FROM_SYSTEM |
+                               FORMAT_MESSAGE_IGNORE_INSERTS,
+                             nullptr, status, 0, buffer, bufferSize, nullptr);
+  // Get rid of the final new line.
+  if (size && buffer[size - 1] == L'\n') {
+    --size;
+    if (size && buffer[size - 1] == L'\r') {
+      --size;
+    }
+  }
+  return std::wstring{buffer, buffer + size};
+}
+
 } // namespace wsudo
 

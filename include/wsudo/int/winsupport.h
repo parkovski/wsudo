@@ -18,10 +18,15 @@ bool setThreadName(const wchar_t *name);
 
 // Convert a "GetLastError" code to string.
 std::string lastErrorString(DWORD status);
+std::wstring lastErrorWString(DWORD status);
 
 // Convenience GetLastError->string.
 inline std::string lastErrorString() {
   return lastErrorString(::GetLastError());
+}
+
+inline std::wstring lastErrorWString() {
+  return lastErrorWString(::GetLastError());
 }
 
 // Dynamic module (DLL) load error.
