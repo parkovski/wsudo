@@ -4,6 +4,7 @@
 
 #include <thread>
 #include <vector>
+#include <exception>
 
 using namespace wsudo;
 
@@ -74,6 +75,7 @@ CorIO::CorIO(int nSystemThreads)
 
 CorIO::~CorIO() {
   log::trace("CorIO finish.");
+  postQuitMessage(std::uncaught_exceptions());
   wait();
 }
 
