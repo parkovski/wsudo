@@ -220,7 +220,7 @@ Client::createSuspendedProcess() const {
 }
 
 bool Client::userHasActiveSession() {
-  _conn.send(msg::QuerySession{_domain, _username});
+  _conn.send(msg::QuerySession{_domain, _username, "key"});
   return std::holds_alternative<msg::Success>(_conn.recv());
 }
 

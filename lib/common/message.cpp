@@ -56,51 +56,112 @@ bool AccessDenied::parse(Message &m, std::string_view buffer) noexcept {
 void AccessDenied::serialize(std::string &buffer) const {}
 
 bool QuerySession::parse(Message &m, std::string_view buffer) noexcept {
-  if (buffer.length() <= 1) {
+  if (buffer.length() < 3) {
     return false;
   }
-  // Allow an empty domain but require a non-empty username.
-  for (size_t isep = 0; isep < buffer.length() - 1; ++isep) {
-    if (buffer[isep] == '\\') {
-      m = QuerySession{buffer.substr(0, isep), buffer.substr(isep + 1)};
-      return true;
+
+  std::string_view domain{"."};
+  std::string_view username{};
+  std::string_view key{};
+  // Allow an empty domain but require a non-empty username and key.
+  for (size_t i = 0; i < buffer.length(); ++i) {
+    if (buffer[i] == '\\') {
+      domain = buffer.substr(0, i);
+      if (domain.empty()) {
+        domain = ".";
+      }
+      for (size_t j = i + 1; j < buffer.length(); ++j) {
+        if (buffer[j] == '\0') {
+          username = buffer.substr(i + 1, j - i - 1);
+          key = buffer.substr(j + 1);
+          goto done_parsing;
+        }
+      }
+    } else if (buffer[i] == '\0') {
+      username = buffer.substr(0, i);
+      key = buffer.substr(i + 1);
+      goto done_parsing;
     }
   }
-  return false;
+
+done_parsing:
+  if (username.empty() || key.empty()) {
+    return false;
+  }
+
+  m = QuerySession{domain, username, key};
+  return true;
 }
 
 void QuerySession::serialize(std::string &buffer) const {
-  buffer.append(domain).append(1, '\\').append(username);
+  if (domain.empty() || domain == ".") {
+    buffer
+      .append(username)
+      .append(1, '\0')
+      .append(key);
+  } else {
+    buffer
+      .append(domain)
+      .append(1, '\\')
+      .append(username)
+      .append(1, '\0')
+      .append(key);
+  }
 }
 
 bool Credential::parse(Message &m, std::string_view buffer) noexcept {
-  if (buffer.length() <= 2) {
+  if (buffer.length() < 2) {
     return false;
   }
-  // Allow domain and password to be empty.
-  for (size_t isep = 0; isep < buffer.length() - 2; ++isep) {
-    if (buffer[isep] == '\\') {
-      if (buffer[isep + 1] == 0) {
-        // Username can't be empty.
-        break;
+
+  std::string_view domain{"."};
+  std::string_view username{};
+  std::string_view password{};
+  // Allow an empty domain and/or password but require a non-empty username.
+  for (size_t i = 0; i < buffer.length(); ++i) {
+    if (buffer[i] == '\\') {
+      domain = buffer.substr(0, i);
+      if (domain.empty()) {
+        domain = ".";
       }
-      for (size_t jsep = isep + 2; jsep < buffer.length(); ++jsep) {
-        if (buffer[jsep] == 0) {
-          m = Credential{buffer.substr(0, isep),
-                         buffer.substr(isep + 1, jsep - isep - 1),
-                         buffer.substr(jsep + 1)};
-          return true;
+      for (size_t j = i + 1; j < buffer.length(); ++j) {
+        if (buffer[j] == '\0') {
+          username = buffer.substr(i + 1, j - i - 1);
+          password = buffer.substr(j + 1);
+          goto done_parsing;
         }
       }
-      break;
+      if (username.empty()) {
+        username = buffer.substr(i + 1);
+        goto done_parsing;
+      }
+    } else if (buffer[i] == '\0') {
+      username = buffer.substr(0, i);
+      password = buffer.substr(i + 1);
+      goto done_parsing;
     }
   }
-  return false;
+  if (username.empty()) {
+    username = buffer;
+  }
+
+done_parsing:
+  if (username.empty()) {
+    return false;
+  }
+
+  m = Credential{domain, username, password};
+  return true;
 }
 
 void Credential::serialize(std::string &buffer) const {
-  buffer.append(domain).append(1, '\\').append(username).append(1, '\0')
-    .append(password);
+  if (!domain.empty() && domain != ".") {
+    buffer.append(domain).append(1, '\\');
+  }
+  buffer.append(username);
+  if (!password.empty()) {
+    buffer.append(1, '\0').append(password);
+  }
 }
 
 bool Bless::parse(Message &m, std::string_view buffer) noexcept {

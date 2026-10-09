@@ -21,7 +21,7 @@ TEST_CASE("Unknown code deserializes to invalid", "[message]") {
 }
 
 TEST_CASE("QSES missing params deserializes to invalid", "[message]") {
-  Message m1{"QSES"sv};
+  Message m1{"QSES\0"sv};
   Message m2{"QSESdomain"sv};
   Message m3{"QSES\\"sv};
   Message m4{"QSESx\\"sv};
@@ -33,34 +33,34 @@ TEST_CASE("QSES missing params deserializes to invalid", "[message]") {
 }
 
 TEST_CASE("QSES allows empty domain", "[message]") {
-  Message m{"QSES\\user"sv};
+  Message m{"QSES\\user\0key"sv};
   REQUIRE(std::holds_alternative<QuerySession>(m));
-  REQUIRE(std::get<QuerySession>(m).domain.empty());
+  REQUIRE(std::get<QuerySession>(m).domain == "."sv);
   REQUIRE(std::get<QuerySession>(m).username == "user"sv);
+  REQUIRE(std::get<QuerySession>(m).key == "key"sv);
 }
 
 TEST_CASE("CRED missing params deserializes to invalid", "[message]") {
   Message m1{"CRED"sv};
-  Message m2{"CREDdomain"sv};
-  Message m3{"CREDd\\"sv};
-  Message m4{"CREDd\0"sv};
-  Message m5{"CRED\\\0pw"sv};
+  Message m2{"CREDd\\"sv};
+  Message m3{"CRED\0"sv};
+  Message m4{"CRED\\\0pw"sv};
 
   REQUIRE(std::holds_alternative<Invalid>(m1));
   REQUIRE(std::holds_alternative<Invalid>(m2));
   REQUIRE(std::holds_alternative<Invalid>(m3));
   REQUIRE(std::holds_alternative<Invalid>(m4));
-  REQUIRE(std::holds_alternative<Invalid>(m5));
 }
 
 TEST_CASE("CRED allows empty domain and password", "[message]") {
   Message m1{"CRED\\user\0"sv};
   Message m2{"CREDdomain\\u\0"sv};
   Message m3{"CRED\\u\0pass"sv};
+  Message m4{"CREDuser"sv};
 
   REQUIRE(std::holds_alternative<Credential>(m1));
   auto &c1 = std::get<Credential>(m1);
-  REQUIRE(c1.domain.empty());
+  REQUIRE(c1.domain == ".");
   REQUIRE(c1.username == "user"sv);
   REQUIRE(c1.password.empty());
 
@@ -72,9 +72,15 @@ TEST_CASE("CRED allows empty domain and password", "[message]") {
 
   REQUIRE(std::holds_alternative<Credential>(m3));
   auto &c3 = std::get<Credential>(m3);
-  REQUIRE(c3.domain.empty());
+  REQUIRE(c3.domain == ".");
   REQUIRE(c3.username == "u"sv);
   REQUIRE(c3.password == "pass"sv);
+
+  REQUIRE(std::holds_alternative<Credential>(m3));
+  auto &c4 = std::get<Credential>(m4);
+  REQUIRE(c4.domain == ".");
+  REQUIRE(c4.username == "user"sv);
+  REQUIRE(c4.password.empty());
 }
 
 TEST_CASE("BLES with wrong size handle deserializes to invalid", "[message]") {
@@ -162,13 +168,14 @@ TEST_CASE("Message round trip", "[message]") {
 
   {
     buf.clear();
-    (m = QuerySession{"domain", "username"}).serialize(buf);
-    REQUIRE(buf == "QSESdomain\\username"sv);
+    (m = QuerySession{"domain", "username", "key"}).serialize(buf);
+    REQUIRE(buf == "QSESdomain\\username\0key"sv);
     Message m2{buf};
     REQUIRE(std::holds_alternative<QuerySession>(m2));
     auto &query = std::get<QuerySession>(m2);
     REQUIRE(query.domain == "domain"sv);
     REQUIRE(query.username == "username"sv);
+    REQUIRE(query.key == "key"sv);
   }
 
   {
