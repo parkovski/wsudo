@@ -34,7 +34,7 @@ void Client::lookupUsername() {
 }
 
 bool Client::readConsolePassword(std::string &password) const {
-  if (_domain.empty()) {
+  if (_domain.empty() || _domain == ".") {
     log::print("[wsudo] password for {}: ", _username);
   } else {
     log::print("[wsudo] password for {}\\{}: ", _domain, _username);
@@ -82,7 +82,167 @@ bool Client::readConsolePassword(std::string &password) const {
 }
 
 bool Client::resolveProgramPath() {
-  return true;
+  size_t i, j;
+  std::wstring resolvedPath;
+  bool searchPath = false;
+  DWORD curdirLength = GetCurrentDirectory(0, nullptr);
+  auto curdir = std::make_unique<wchar_t[]>(curdirLength);
+  GetCurrentDirectory(curdirLength, curdir.get());
+  if (_program[0] == '\\' || _program[0] == '/') {
+    if (_program[1] == '\\' || _program[1] == '/') {
+      if (
+        _program[2] == '?' && _program[0] == '\\' && _program[1] == '\\'
+        && _program[3] == '\\'
+      ) {
+        // Absolute NT path (\\?\...) - must use backslashes.
+        resolvedPath = _program;
+      } else {
+        // UNC path.
+        resolvedPath = _program;
+      }
+    } else {
+      // Absolute path without drive letter.
+      if ((curdir[0] == '\\' || curdir[0] == '/')
+        && (curdir[1] == '\\' || curdir[1] == '/')) {
+        // curdir is a UNC path. The root is in the form "\\server\share".
+        for (i = 2; curdir[i] != 0; ++i) {
+          if (curdir[i] == '\\' || curdir[i] == '/') {
+            // Server is curdir[2..i].
+            for (j = i + 1; curdir[j] != 0; ++j) {
+              if (curdir[j] == '\\' || curdir[j] == '/') {
+                // Share is curdir[i+1..j].
+                // Root path is curdir[0..j].
+                resolvedPath = std::wstring_view{curdir.get(), j};
+                goto breakUnc;
+              }
+            }
+            // Didn't find a \ or /. curdir is something like "\\server\share".
+            resolvedPath = std::wstring_view{curdir.get(), j};
+            goto breakUnc;
+          }
+        }
+        // Didn't find something of the form "\\server\share...".
+        log::error(L"Invalid UNC path \"{}\".", curdir.get());
+        return false;
+      breakUnc:
+        // resolvedPath has no trailing \. _program has an initial \.
+        resolvedPath.append(_program);
+      } else {
+        assert(((curdir[0] >= 'a' && curdir[0] <= 'z')
+                || (curdir[0] >= 'A' && curdir[0] <= 'Z'))
+               && curdir[1] == ':');
+        resolvedPath = std::wstring_view{curdir.get(), 2}; // e.g., C:
+        resolvedPath += _program; // _program has an initial \.
+      }
+    }
+  } else if (
+    (
+      (_program[0] >= 'A' && _program[0] <= 'Z')
+      || (_program[0] >= 'a' && _program[0] <= 'z')
+    )
+    && _program[1] == ':'
+  ) {
+    if (_program[2] == '\\' || _program[2] == '/') {
+      // Absolute path with drive letter.
+      resolvedPath = _program;
+    } else {
+      // Relative path with drive letter. Windows doesn't keep track of current
+      // directories for each drive, so require that the drive is the same as
+      // the one from the current directory.
+      if ((_program[0] | 0x20) != (curdir[0] | 0x20)) {
+        log::error("Drive letter must match current directory.");
+        return false;
+      }
+      // Now it's either a relative path to the current directory
+      // (includes a \) or a path lookup (no \).
+      for (i = 3; i < _program.length(); ++i) {
+        if (_program[i] == '\\' || _program[i] == '/') {
+          resolvedPath = curdir.get();
+          if (!resolvedPath.ends_with('\\')
+            && !resolvedPath.ends_with('/')) {
+            resolvedPath.push_back('\\');
+          }
+          resolvedPath.append(std::wstring_view{_program}.substr(2));
+          break;
+        }
+      }
+      if (resolvedPath.empty()) {
+        // Didn't find a \. It's path relative.
+        resolvedPath = std::wstring_view{_program}.substr(2);
+        searchPath = true;
+      }
+    }
+  } else if (
+    _program[0] == '.' && (_program[1] == '\\' || _program[1] == '/')
+  ) {
+    // Relative path to current dir.
+    resolvedPath = curdir.get();
+    if (!resolvedPath.ends_with('\\') && !resolvedPath.ends_with('/')) {
+      resolvedPath.push_back('\\');
+    }
+    resolvedPath.append(std::wstring_view{_program}.substr(2));
+  } else {
+    for (i = 0; i < _program.length(); ++i) {
+      if (_program[i] == '\\' || _program[i] == '/') {
+        // Relative path to current dir.
+        resolvedPath = curdir.get();
+        if (!resolvedPath.ends_with('\\') && !resolvedPath.ends_with('/')) {
+          resolvedPath.push_back('\\');
+        }
+        resolvedPath.append(_program);
+        break;
+      }
+    }
+    if (resolvedPath.empty()) {
+      // Relative to Path environment variable.
+      resolvedPath = _program;
+      searchPath = true;
+    }
+  }
+
+  if (searchPath) {
+    log::debug(L"Searching Path for \"{}\".", _program);
+    DWORD pathLength = GetEnvironmentVariable(L"Path", nullptr, 0);
+    auto path = std::make_unique<wchar_t[]>(pathLength + 1);
+    std::wstring potentialPath;
+    GetEnvironmentVariable(L"Path", path.get(), pathLength + 1);
+    i = j = 0;
+    while (j <= pathLength) {
+      if (path[j] == ';' || path[j] == '\0') {
+        if (j == i) {
+          // Empty path segment
+          i = ++j;
+          continue;
+        }
+        std::wstring_view segment{path.get() + i, j - i};
+        potentialPath = segment;
+        if (!segment.ends_with('\\') && !segment.ends_with('/')) {
+          potentialPath.push_back('\\');
+        }
+        potentialPath.append(resolvedPath);
+        DWORD attributes = GetFileAttributes(potentialPath.c_str());
+        if (attributes != INVALID_FILE_ATTRIBUTES) {
+          _program = potentialPath;
+          log::debug(L"Found \"{}\".", _program);
+          return true;
+        }
+        i = ++j;
+        continue;
+      }
+      ++j;
+    }
+  } else {
+    DWORD attributes = GetFileAttributes(resolvedPath.c_str());
+    if (attributes != INVALID_FILE_ATTRIBUTES) {
+      _program = resolvedPath;
+      log::debug(L"Found \"{}\".", _program);
+      return true;
+    }
+  }
+
+  log::error(L"Could not find \"{}\".", _program);
+  log::trace(L"Note: path was resolved to \"{}\".", resolvedPath);
+  return false;
 }
 
 std::wstring Client::escapeCommandLineArg(std::wstring_view arg) {
