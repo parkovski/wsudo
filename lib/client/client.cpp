@@ -31,6 +31,21 @@ void Client::lookupUsername() {
     username.erase(0, slash + 1);
   }
   _username = to_utf8(username);
+
+  if (!domain.empty()) {
+    wchar_t computerName[MAX_COMPUTERNAME_LENGTH + 1];
+    DWORD computerNameLength = MAX_COMPUTERNAME_LENGTH;
+    if (GetComputerName(computerName, &computerNameLength)) {
+      if (CompareString(LOCALE_INVARIANT, NORM_IGNORECASE,
+                        computerName, -1, domain.c_str(), -1) == CSTR_EQUAL) {
+        // Ignore local domain.
+        _domain = ".";
+      }
+    }
+  }
+
+  log::debug("Current user: {}{}{}", _domain == "." ? "" : _domain,
+             (_domain.empty() || _domain == ".") ? "" : "\\", _username);
 }
 
 bool Client::readConsolePassword(std::string &password) const {
