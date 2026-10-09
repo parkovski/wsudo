@@ -12,15 +12,15 @@ bool TokenManager::logon(const std::wstring &domain,
                          const std::wstring &username,
                          std::wstring &password) {
   WSUDO_SCOPE_EXIT {
-    password.assign(password.length(), L'\0');
+    SecureZeroMemory(password.data(), password.length() * sizeof(wchar_t));
     password.clear();
   };
 
+  /*HANDLE userToken;
+  PSID pSid;
   PVOID pProfileBuffer;
   DWORD profileLength;
-  QUOTA_LIMITS quotaLimits;
-  HANDLE userToken;
-  PSID pSid;
+  QUOTA_LIMITS quotaLimits;*/
   // LOGON32_LOGON_NETWORK should be used if just verifying that the
   // credentials work. If we actually intend to use the returned token,
   // network tokens have some restrictions and we should use
@@ -28,10 +28,15 @@ bool TokenManager::logon(const std::wstring &domain,
   // We can also specify a set of token groups to add to the returned token
   // by using LogonUserExExW which needs to be imported from Advapi32.dll with
   // a LinkedModule.
-  if (LogonUserEx(username.c_str(), domain.c_str(), password.c_str(),
+  /*if (LogonUserEx(username.c_str(), domain.c_str(), password.c_str(),
                   LOGON32_LOGON_NETWORK, LOGON32_PROVIDER_DEFAULT,
                   &userToken, &pSid, &pProfileBuffer, &profileLength,
                   &quotaLimits)) {
+    return true;
+  }*/
+  if (LogonUserEx(username.c_str(), domain.c_str(), password.c_str(),
+                  LOGON32_LOGON_NETWORK, LOGON32_PROVIDER_DEFAULT,
+                  nullptr, nullptr, nullptr, nullptr, nullptr)) {
     return true;
   }
   return false;
