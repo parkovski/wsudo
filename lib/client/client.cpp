@@ -200,6 +200,19 @@ bool Client::resolveProgramPath() {
     }
   }
 
+  auto isValidFile = [](std::wstring &path) -> bool {
+    DWORD attributes = GetFileAttributes(path.c_str());
+    if (attributes == INVALID_FILE_ATTRIBUTES) {
+      path += L".exe";
+      attributes = GetFileAttributes(path.c_str());
+      if (attributes == INVALID_FILE_ATTRIBUTES) {
+        path.erase(path.length() - 4);
+        return false;
+      }
+    }
+    return true;
+  };
+
   if (searchPath) {
     log::debug(L"Searching Path for \"{}\".", _program);
     DWORD pathLength = GetEnvironmentVariable(L"Path", nullptr, 0);
@@ -220,8 +233,7 @@ bool Client::resolveProgramPath() {
           potentialPath.push_back('\\');
         }
         potentialPath.append(resolvedPath);
-        DWORD attributes = GetFileAttributes(potentialPath.c_str());
-        if (attributes != INVALID_FILE_ATTRIBUTES) {
+        if (isValidFile(potentialPath)) {
           _program = potentialPath;
           log::debug(L"Found \"{}\".", _program);
           return true;
@@ -232,8 +244,7 @@ bool Client::resolveProgramPath() {
       ++j;
     }
   } else {
-    DWORD attributes = GetFileAttributes(resolvedPath.c_str());
-    if (attributes != INVALID_FILE_ATTRIBUTES) {
+    if (isValidFile(resolvedPath)) {
       _program = resolvedPath;
       log::debug(L"Found \"{}\".", _program);
       return true;
