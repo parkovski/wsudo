@@ -55,7 +55,9 @@ bool AccessDenied::parse(Message &m, std::string_view buffer) noexcept {
 
 void AccessDenied::serialize(std::string &buffer) const {}
 
-bool InitSession::parse(Message &m, std::string_view buffer) noexcept {
+// InitSession and QuerySession have the same params and parsing rules.
+template<class M>
+static bool parseSessionMessage(Message &m, std::string_view buffer) noexcept {
   if (buffer.length() < 3) {
     return false;
   }
@@ -89,78 +91,41 @@ done_parsing:
     return false;
   }
 
-  m = InitSession{domain, username, key};
+  m = M{domain, username, key};
   return true;
+}
+
+template<class M>
+static void serializeSessionMessage(const M &m, std::string &buffer) {
+  if (m.domain.empty() || m.domain == ".") {
+    buffer
+      .append(m.username)
+      .append(1, '\0')
+      .append(m.key);
+  } else {
+    buffer
+      .append(m.domain)
+      .append(1, '\\')
+      .append(m.username)
+      .append(1, '\0')
+      .append(m.key);
+  }
+}
+
+bool InitSession::parse(Message &m, std::string_view buffer) noexcept {
+  return parseSessionMessage<InitSession>(m, buffer);
 }
 
 void InitSession::serialize(std::string &buffer) const {
-  if (domain.empty() || domain == ".") {
-    buffer
-      .append(username)
-      .append(1, '\0')
-      .append(key);
-  } else {
-    buffer
-      .append(domain)
-      .append(1, '\\')
-      .append(username)
-      .append(1, '\0')
-      .append(key);
-  }
+  serializeSessionMessage(*this, buffer);
 }
 
 bool QuerySession::parse(Message &m, std::string_view buffer) noexcept {
-  if (buffer.length() < 3) {
-    return false;
-  }
-
-  std::string_view domain{"."};
-  std::string_view username{};
-  std::string_view key{};
-  // Allow an empty domain but require a non-empty username and key.
-  for (size_t i = 0; i < buffer.length(); ++i) {
-    if (buffer[i] == '\\') {
-      domain = buffer.substr(0, i);
-      if (domain.empty()) {
-        domain = ".";
-      }
-      for (size_t j = i + 1; j < buffer.length(); ++j) {
-        if (buffer[j] == '\0') {
-          username = buffer.substr(i + 1, j - i - 1);
-          key = buffer.substr(j + 1);
-          goto done_parsing;
-        }
-      }
-    } else if (buffer[i] == '\0') {
-      username = buffer.substr(0, i);
-      key = buffer.substr(i + 1);
-      goto done_parsing;
-    }
-  }
-
-done_parsing:
-  if (username.empty() || key.empty()) {
-    return false;
-  }
-
-  m = QuerySession{domain, username, key};
-  return true;
+  return parseSessionMessage<QuerySession>(m, buffer);
 }
 
 void QuerySession::serialize(std::string &buffer) const {
-  if (domain.empty() || domain == ".") {
-    buffer
-      .append(username)
-      .append(1, '\0')
-      .append(key);
-  } else {
-    buffer
-      .append(domain)
-      .append(1, '\\')
-      .append(username)
-      .append(1, '\0')
-      .append(key);
-  }
+  serializeSessionMessage(*this, buffer);
 }
 
 bool Credential::parse(Message &m, std::string_view buffer) noexcept {
