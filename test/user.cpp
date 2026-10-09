@@ -34,7 +34,7 @@ TEST_CASE("LogonUser", "[.logon]") {
                     LOGON32_PROVIDER_DEFAULT, token.put(), pSid.addressof(),
                     &pProfileBuffer, &profileLength, &quotaLimits))
   {
-    FAIL("LogonUserExW failed" << wsudo::lastErrorString());
+    FAIL("LogonUserExW failed: " << wsudo::lastErrorString());
   }
   REQUIRE(!!token);
 }
