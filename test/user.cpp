@@ -13,7 +13,7 @@ TEST_CASE("LogonUser", "[.logon]") {
                                    WSUDO_ARRAYSIZE(username));
   if (length == 0) {
     FAIL("Username (env WSUSER) not present.");
-  } else if (length >= sizeof(username)) {
+  } else if (length >= WSUDO_ARRAYSIZE(username)) {
     FAIL("Username (env WSUSER) too long.");
   }
 
@@ -21,7 +21,7 @@ TEST_CASE("LogonUser", "[.logon]") {
                                    WSUDO_ARRAYSIZE(password));
   if (length == 0) {
     FAIL("Password (env WSPASSWORD) not present.");
-  } else if (length >= sizeof(password)) {
+  } else if (length >= WSUDO_ARRAYSIZE(password)) {
     FAIL("Password (env WSPASSWORD) too long.");
   }
 
