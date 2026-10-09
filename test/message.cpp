@@ -20,9 +20,29 @@ TEST_CASE("Unknown code deserializes to invalid", "[message]") {
   REQUIRE(std::holds_alternative<Invalid>(m));
 }
 
+TEST_CASE("ISES missing params deserializes to invalid", "[message]") {
+  Message m1{"ISES\0"sv};
+  Message m2{"ISESuser"sv};
+  Message m3{"ISES\\"sv};
+  Message m4{"ISESx\\"sv};
+
+  REQUIRE(std::holds_alternative<Invalid>(m1));
+  REQUIRE(std::holds_alternative<Invalid>(m2));
+  REQUIRE(std::holds_alternative<Invalid>(m3));
+  REQUIRE(std::holds_alternative<Invalid>(m4));
+}
+
+TEST_CASE("ISES allows empty domain", "[message]") {
+  Message m{"ISESuser\0key"sv};
+  REQUIRE(std::holds_alternative<InitSession>(m));
+  REQUIRE(std::get<InitSession>(m).domain == "."sv);
+  REQUIRE(std::get<InitSession>(m).username == "user"sv);
+  REQUIRE(std::get<InitSession>(m).key == "key"sv);
+}
+
 TEST_CASE("QSES missing params deserializes to invalid", "[message]") {
   Message m1{"QSES\0"sv};
-  Message m2{"QSESdomain"sv};
+  Message m2{"QSESuser"sv};
   Message m3{"QSES\\"sv};
   Message m4{"QSESx\\"sv};
 
@@ -164,6 +184,18 @@ TEST_CASE("Message round trip", "[message]") {
     REQUIRE(buf == "DENY"sv);
     Message m2{buf};
     REQUIRE(std::holds_alternative<AccessDenied>(m2));
+  }
+
+  {
+    buf.clear();
+    (m = InitSession{"domain", "username", "key"}).serialize(buf);
+    REQUIRE(buf == "ISESdomain\\username\0key"sv);
+    Message m2{buf};
+    REQUIRE(std::holds_alternative<InitSession>(m2));
+    auto &query = std::get<InitSession>(m2);
+    REQUIRE(query.domain == "domain"sv);
+    REQUIRE(query.username == "username"sv);
+    REQUIRE(query.key == "key"sv);
   }
 
   {

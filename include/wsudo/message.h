@@ -55,6 +55,25 @@ namespace wsudo::msg {
     void serialize(std::string &buffer) const;
   };
 
+  struct InitSession {
+    static constexpr std::string_view code{"ISES"};
+
+    std::string_view domain;
+    std::string_view username;
+    std::string_view key;
+
+    constexpr explicit InitSession(std::string_view domain,
+                                   std::string_view username,
+                                   std::string_view key) noexcept
+      : domain{domain.empty() ? "." : domain}
+      , username{username}
+      , key{key}
+    {}
+
+    static bool parse(Message &m, std::string_view buffer) noexcept;
+    void serialize(std::string &buffer) const;
+  };
+
   // Ask if a session is already open.
   struct QuerySession {
     static constexpr std::string_view code{"QSES"};
@@ -116,6 +135,7 @@ namespace wsudo::msg {
     Failure,
     InternalError,
     AccessDenied,
+    InitSession,
     QuerySession,
     Credential,
     Bless
