@@ -9,14 +9,16 @@ TEST_CASE("LogonUser", "[.logon]") {
   wchar_t password[256];
   DWORD length;
 
-  length = GetEnvironmentVariableW(L"WSUSER", username, sizeof(username));
+  length = GetEnvironmentVariableW(L"WSUSER", username,
+                                   WSUDO_ARRAYSIZE(username));
   if (length == 0) {
     FAIL("Username (env WSUSER) not present.");
   } else if (length >= sizeof(username)) {
     FAIL("Username (env WSUSER) too long.");
   }
 
-  length = GetEnvironmentVariableW(L"WSPASSWORD", password, sizeof(password));
+  length = GetEnvironmentVariableW(L"WSPASSWORD", password,
+                                   WSUDO_ARRAYSIZE(password));
   if (length == 0) {
     FAIL("Password (env WSPASSWORD) not present.");
   } else if (length >= sizeof(password)) {

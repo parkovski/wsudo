@@ -83,4 +83,6 @@ namespace detail {
 # define WSUDO_UNREACHABLE(why) __assume(0)
 #endif
 
+#define WSUDO_ARRAYSIZE(array) (sizeof(array) / sizeof(array[0]))
+
 #endif // WSUDO_WSUDO_H
