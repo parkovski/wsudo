@@ -193,8 +193,10 @@ HRESULT Client::operator()() {
     }
   }
 
-  auto pi = createSuspendedProcess();
-  if (pi.hProcess == nullptr) {
+  PROCESS_INFORMATION pi{};
+  try {
+    pi = createSuspendedProcess();
+  } catch (wil::ResultException &) {
     // TODO: this has a pretty accurate description but figure out better error
     // handling here.
     return ERROR_NO_PROC_SLOTS;
