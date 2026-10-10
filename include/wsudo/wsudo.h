@@ -1,6 +1,8 @@
 #ifndef WSUDO_WSUDO_H
 #define WSUDO_WSUDO_H
 
+#include "log.h"
+
 #define WINVER _WIN32_WINNT_WIN7
 #define _WIN32_WINNT _WIN32_WINNT_WIN7
 #define NTDDI_VERSION NTDDI_WIN7
@@ -19,8 +21,6 @@
 #include <cassert>
 #include <cstdio>
 #include <type_traits>
-
-#include "log.h"
 
 namespace wsudo {
 
@@ -44,7 +44,7 @@ namespace detail {
   class ScopeExit {
     OnExit _onExit;
   public:
-    explicit ScopeExit(OnExit onExit) : _onExit(std::move(onExit)) {}
+    explicit ScopeExit(OnExit &&onExit) : _onExit{std::move(onExit)} {}
     ScopeExit &operator=(const ScopeExit &) = delete;
     ~ScopeExit() {
       _onExit();
@@ -56,7 +56,8 @@ namespace detail {
   // Use an arbitrary high precedence operator, even though there shouldn't
   // be anything else in these statements anyways.
   template<typename OnExit>
-  ScopeExit<OnExit> operator%(const detail::ScopeExitHelper &, OnExit onExit) {
+  ScopeExit<OnExit> operator%(const detail::ScopeExitHelper &,
+                              OnExit &&onExit) {
     return ScopeExit<OnExit>{std::move(onExit)};
   }
 }

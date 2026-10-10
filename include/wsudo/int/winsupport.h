@@ -5,7 +5,6 @@
 #include <exception>
 #include <string>
 #include <string_view>
-#include <type_traits>
 
 namespace wsudo {
 
@@ -14,7 +13,8 @@ std::wstring to_utf16(std::string_view utf8str);
 
 // Set thread name via new Win10 API, if it exists.
 // Returns false if the API was not found or failed.
-bool setThreadName(const wchar_t *name);
+bool setThreadName(const wchar_t *name, HANDLE thread = INVALID_HANDLE_VALUE);
+std::wstring getThreadName(HANDLE thread = INVALID_HANDLE_VALUE);
 
 // Convert a "GetLastError" code to string.
 std::string lastErrorString(DWORD status);
@@ -28,6 +28,9 @@ inline std::string lastErrorString() {
 inline std::wstring lastErrorWString() {
   return lastErrorWString(::GetLastError());
 }
+
+bool resolveProgramPath(std::wstring &program);
+std::wstring escapeCommandLineArg(std::wstring_view arg);
 
 // Dynamic module (DLL) load error.
 class module_load_error : public std::exception {

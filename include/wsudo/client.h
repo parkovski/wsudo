@@ -64,10 +64,6 @@ private:
   // reading was interrupted (e.g. by Ctrl-C).
   bool readConsolePassword(std::string &password) const;
 
-  bool resolveProgramPath();
-
-  static std::wstring escapeCommandLineArg(std::wstring_view arg);
-
   std::wstring createCommandLine() const;
 
   PROCESS_INFORMATION createSuspendedProcess() const;
