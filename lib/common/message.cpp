@@ -216,7 +216,6 @@ void Bless::serialize(std::string &buffer) const {
   std::string_view process{
     reinterpret_cast<const char *>(&hRemoteProcess), sizeof(void *)
   };
-  log::debug("serialize: process = 0x{:X}", reinterpret_cast<unsigned long long>(process.data()));
   buffer.append(process);
 }
 
