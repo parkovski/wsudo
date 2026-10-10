@@ -9,15 +9,24 @@ int wmain(int argc, wchar_t *argv[]) {
   log::g_outLogger->set_level(spdlog::level::trace);
   log::g_errLogger = spdlog::stderr_color_mt("wsudo.err");
   log::g_errLogger->set_level(spdlog::level::warn);
-  spdlog::set_pattern("%^[%l]%$ %v");
+  spdlog::set_pattern("%^%l:%$ %v");
 
   if (argc < 2) {
     log::eprint("Usage: wsudo <program> <args>\n");
-    return ClientExitInvalidUsage;
+    return HRESULT_FROM_WIN32(ERROR_INVALID_PARAMETER);
   }
 
-  std::wstring pipename{PipeFullPath};
-  Client client(pipename, argc - 1, argv + 1);
+  std::unique_ptr<Client> client;
+  try {
+    client = std::make_unique<Client>(PipeFullPath, argc - 1, argv + 1);
+    Client client(PipeFullPath, argc - 1, argv + 1);
+  } catch (wil::ResultException &e) {
+    if (e.GetErrorCode() == HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND)) {
+      log::critical("Pipe connection failed. Is the server running?");
+    }
+    return (int)e.GetErrorCode();
+  }
+
   log::debug("Client initialized");
-  return (int)client();
+  return (int)(*client)();
 }

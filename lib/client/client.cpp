@@ -399,7 +399,7 @@ Client::createSuspendedProcess() const {
   if (!CreateProcess(nullptr, commandLine.data(), nullptr, nullptr, true,
                      CREATE_UNICODE_ENVIRONMENT | CREATE_SUSPENDED,
                      nullptr, nullptr, &si, &pi)) {
-    log::error("CreateProcess failed!");
+    log::error("Process creation failed.");
     THROW_LAST_ERROR();
   }
   return pi;
@@ -416,6 +416,7 @@ bool Client::validateCredentials(std::string &password) {
   if (std::holds_alternative<msg::Success>(res)) {
     return true;
   }
+  log::error("Invalid credentials.");
   return false;
 }
 
@@ -425,6 +426,7 @@ bool Client::bless(HANDLE process) {
   if (std::holds_alternative<msg::Success>(res)) {
     return true;
   }
+  log::error("Bless (elevate) process failed.");
   return false;
 }
 
