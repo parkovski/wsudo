@@ -13,7 +13,7 @@
 namespace wsudo {
 
 class CorIO {
-  constexpr static LPOVERLAPPED _quitFlag = (LPOVERLAPPED)(size_t)(-1);
+  const static LPOVERLAPPED _quitFlag;
   wil::unique_handle _ioCompletionPort;
   std::vector<std::thread> _threads;
   int _exitCode = 0;
@@ -67,10 +67,11 @@ public:
   /// Notify all threads to quit.
   void postQuitMessage(int exitCode);
 
+  class FileBase;
+
 private:
   wscoro::task<> enterIOThread();
 
-  class FileBase;
   void registerFile(FileBase &file);
 
 public:

@@ -8,6 +8,8 @@
 
 using namespace wsudo;
 
+const LPOVERLAPPED CorIO::_quitFlag = (LPOVERLAPPED)(size_t)(-1);
+
 void CorIO::listener() noexcept {
   DWORD bytes;
   LPOVERLAPPED overlapped;

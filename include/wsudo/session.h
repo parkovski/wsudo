@@ -68,7 +68,7 @@ public:
   Session &operator=(const Session &) = delete;
 
   Session(Session &&) = default;
-  Session &operator=(Session &&) = default;
+  Session &operator=(Session &&) = delete;
 
   std::wstring_view username() const {
     return _username;
