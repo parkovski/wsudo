@@ -1,13 +1,12 @@
 #ifndef WSUDO_WSUDO_H
 #define WSUDO_WSUDO_H
 
-#include "log.h"
-
 #define WINVER _WIN32_WINNT_WIN7
 #define _WIN32_WINNT _WIN32_WINNT_WIN7
 #define NTDDI_VERSION NTDDI_WIN7
 #define NOMINMAX
 #include <Windows.h>
+
 #include "int/winsupport.h"
 
 // Winternl.h and NTSecAPI.h both define some of the same types so
@@ -21,6 +20,8 @@
 #include <cassert>
 #include <cstdio>
 #include <type_traits>
+
+#include "log.h"
 
 namespace wsudo {
 

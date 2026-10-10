@@ -1,3 +1,4 @@
+#include "wsudo/wsudo.h"
 #include "wsudo/server.h"
 
 #include <spdlog/sinks/stdout_color_sinks.h>
@@ -6,11 +7,7 @@
 
 #include <Psapi.h>
 
-#include <cstring>
 #include <string>
-#include <iostream>
-#include <system_error>
-#include <thread>
 
 using namespace wsudo;
 

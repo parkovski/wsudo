@@ -1,3 +1,4 @@
+#include "wsudo/wsudo.h"
 #include "wsudo/client.h"
 
 #define SECURITY_WIN32

@@ -379,4 +379,3 @@ std::wstring escapeCommandLineArg(std::wstring_view arg) {
 }
 
 } // namespace wsudo
-

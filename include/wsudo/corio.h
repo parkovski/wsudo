@@ -5,7 +5,6 @@
 #define NOMINMAX
 #include <wil/resource.h>
 
-#include <span>
 #include <vector>
 #include <cassert>
 #include <thread>

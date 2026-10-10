@@ -1,4 +1,5 @@
 #define WSUDO_NO_NT_API
+#include "wsudo/wsudo.h"
 #include "wsudo/session.h"
 #include <cstdlib>
 

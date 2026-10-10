@@ -1,12 +1,9 @@
 #ifndef WSUDO_CLIENT_H
 #define WSUDO_CLIENT_H
 
-#include "wsudo.h"
 #include "message.h"
 
 #include <wil/resource.h>
-
-#include <vector>
 
 struct ClientTest;
 

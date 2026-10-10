@@ -1,7 +1,5 @@
 #pragma once
 
-#include "wsudo.h"
-
 #include <wil/resource.h>
 
 #include <string>

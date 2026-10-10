@@ -1,5 +1,5 @@
-#include "wsudo/client.h"
 #include "wsudo/wsudo.h"
+#include "wsudo/client.h"
 
 #include <catch2/catch_all.hpp>
 

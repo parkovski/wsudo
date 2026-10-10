@@ -1,5 +1,4 @@
 #include "wsudo/message.h"
-#include "wsudo/log.h"
 
 using namespace wsudo::msg;
 

@@ -1,3 +1,4 @@
+#include "wsudo/wsudo.h"
 #include "wsudo/client.h"
 
 #include <spdlog/sinks/stdout_color_sinks.h>

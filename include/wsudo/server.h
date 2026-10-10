@@ -1,14 +1,10 @@
 #ifndef WSUDO_SERVER_H
 #define WSUDO_SERVER_H
 
-#include "wsudo.h"
 #include "corio.h"
 #include "session.h"
 #include "message.h"
 
-#include <memory>
-#include <type_traits>
-#include <vector>
 #include <string_view>
 
 #include <AclAPI.h>

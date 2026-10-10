@@ -1,3 +1,4 @@
+#include "wsudo/wsudo.h"
 #include "wsudo/server.h"
 #include "wsudo/tokenmanager.h"
 

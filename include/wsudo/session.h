@@ -1,7 +1,6 @@
 #ifndef WSUDO_SESSION_H
 #define WSUDO_SESSION_H
 
-#include "wsudo.h"
 #ifdef WSUDO_NO_NT_API
 # include <NTSecAPI.h>
 // wil thinks this needs to be defined for the LSA types, but MSDN says to
