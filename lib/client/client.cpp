@@ -421,7 +421,7 @@ bool Client::validateCredentials(std::string &password) {
 }
 
 bool Client::bless(HANDLE process) {
-  _conn.send(msg::Bless{process});
+  _conn.send(msg::Bless{"key", process});
   auto res = _conn.recv();
   if (std::holds_alternative<msg::Success>(res)) {
     return true;

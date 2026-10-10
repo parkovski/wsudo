@@ -104,9 +104,9 @@ TEST_CASE("CRED allows empty domain and password", "[message]") {
 }
 
 TEST_CASE("BLES with wrong size handle deserializes to invalid", "[message]") {
-  Message m0{"BLES"sv};
-  Message m1{"BLES0123"sv};
-  Message m2{"BLES01234567"sv};
+  Message m0{"BLESkey\0"sv};
+  Message m1{"BLESkey\0000123"sv};
+  Message m2{"BLESkey\00001234567"sv};
 
   REQUIRE(std::holds_alternative<Invalid>(m0));
 
@@ -119,13 +119,14 @@ TEST_CASE("BLES with wrong size handle deserializes to invalid", "[message]") {
   } else if constexpr (sizeof(void *) == 8) {
     good = &m2;
     bad = &m1;
-    p = *reinterpret_cast<void *const *>("012345678");
+    p = *reinterpret_cast<void *const *>("01234567");
   } else {
     FAIL("seriously, what type of device do you have??");
   }
 
   REQUIRE(std::holds_alternative<Bless>(*good));
   REQUIRE(std::holds_alternative<Invalid>(*bad));
+  REQUIRE(std::get<Bless>(*good).key == "key"sv);
   REQUIRE(std::get<Bless>(*good).hRemoteProcess == p);
 }
 
@@ -224,14 +225,12 @@ TEST_CASE("Message round trip", "[message]") {
 
   {
     buf.clear();
-    (m = Bless{&m}).serialize(buf);
+    (m = Bless{"key", &m}).serialize(buf);
     REQUIRE(buf.substr(0, 4) == "BLES"sv);
-    std::string_view handlestr{reinterpret_cast<const char *>(&m),
-                               sizeof(void *)};
-    REQUIRE(buf.substr(4) == handlestr);
     Message m2{buf};
     REQUIRE(std::holds_alternative<Bless>(m2));
     auto &bless = std::get<Bless>(m2);
+    REQUIRE(bless.key == "key"sv);
     REQUIRE(bless.hRemoteProcess == &m);
   }
 }

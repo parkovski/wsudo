@@ -1,4 +1,5 @@
 #include "wsudo/message.h"
+#include "wsudo/log.h"
 
 using namespace wsudo::msg;
 
@@ -184,18 +185,39 @@ void Credential::serialize(std::string &buffer) const {
 }
 
 bool Bless::parse(Message &m, std::string_view buffer) noexcept {
-  if (buffer.length() != sizeof(void *)) {
+  // The key will probably never be just one character but it's at least some
+  // kind of sanity check.
+  if (buffer.length() < sizeof(void *) + 2) {
     return false;
   }
-  m = Bless{*reinterpret_cast<void *const *>(buffer.data())};
+
+  std::string_view key{};
+  size_t i = 0;
+  for (; i < buffer.length(); ++i) {
+    if (buffer[i] == '\0') {
+      key = buffer.substr(0, i);
+      break;
+    }
+  }
+
+  if (buffer.length() - i - 1 != sizeof(void *)) {
+    return false;
+  }
+
+  void *process;
+  memcpy(&process, buffer.data() + i + 1, sizeof(void *));
+
+  m = Bless{key, process};
   return true;
 }
 
 void Bless::serialize(std::string &buffer) const {
-  // string seems to not like using append here. Probably should switch to
-  // vector<char> for the buffer.
-  buffer.resize(4 + sizeof(void *));
-  *reinterpret_cast<void **>(buffer.data() + 4) = hRemoteProcess;
+  buffer.append(key).push_back('\0');
+  std::string_view process{
+    reinterpret_cast<const char *>(&hRemoteProcess), sizeof(void *)
+  };
+  log::debug("serialize: process = 0x{:X}", reinterpret_cast<unsigned long long>(process.data()));
+  buffer.append(process);
 }
 
 namespace {

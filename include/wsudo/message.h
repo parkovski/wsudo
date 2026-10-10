@@ -118,10 +118,12 @@ namespace wsudo::msg {
   struct Bless {
     static constexpr std::string_view code{"BLES"};
 
+    std::string_view key;
     void *hRemoteProcess;
 
-    constexpr explicit Bless(void *hRemoteProcess) noexcept
-      : hRemoteProcess{hRemoteProcess}
+    constexpr explicit Bless(std::string_view key, void *hRemoteProcess)
+      noexcept
+      : key{key}, hRemoteProcess{hRemoteProcess}
     {}
 
     static bool parse(Message &m, std::string_view buffer) noexcept;
