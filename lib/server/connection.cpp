@@ -21,7 +21,7 @@ wscoro::task<bool> Server::Connection::connect() {
 
       case ERROR_PIPE_CONNECTED:
         log::trace("ServerConnection client was already connected.");
-        break;
+        co_return true;
 
       default:
         log::error("ServerConnection connection failed: 0x{:X} {}", err,
@@ -52,6 +52,7 @@ bool Server::Connection::disconnect() {
 wscoro::fire_and_forget Server::Connection::run() {
   while (true) {
     if (!co_await connect()) {
+      log::error("Pipe connection failed.");
       break;
     }
     co_await _server->dispatch(*this);

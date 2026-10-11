@@ -7,6 +7,21 @@
 namespace wsudo::msg {
   struct Message;
 
+  struct NoMessage {
+    static constexpr std::string_view code{"NMSG"};
+
+    std::string_view payload;
+
+    NoMessage() = default;
+
+    constexpr explicit NoMessage(std::string_view payload) noexcept
+      : payload{payload}
+    {}
+
+    static bool parse(Message &mm, std::string_view buffer) noexcept;
+    void serialize(std::string &buffer) const;
+  };
+
   // Invalid message.
   struct Invalid {
     static constexpr std::string_view code{"INVM"};
@@ -143,6 +158,7 @@ namespace wsudo::msg {
 
   // This is a view; it does not hold its own buffer memory.
   struct Message : std::variant<
+    NoMessage,
     Invalid,
     Success,
     Failure,

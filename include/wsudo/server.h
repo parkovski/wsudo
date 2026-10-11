@@ -40,7 +40,7 @@ public:
   int operator()(int nUserThreads = 0, int nSystemThreads = 0);
   void quit(int exitCode = 0);
 
-  wscoro::task<bool> dispatch(Connection &conn);
+  wscoro::task<> dispatch(Connection &conn);
 
   class Connection : private CorIO::Pipe {
     Server *_server;

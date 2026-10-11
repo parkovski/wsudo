@@ -2,6 +2,15 @@
 
 using namespace wsudo::msg;
 
+bool NoMessage::parse(Message &m, std::string_view buffer) noexcept {
+  m = NoMessage{buffer};
+  return true;
+}
+
+void NoMessage::serialize(std::string &buffer) const {
+  buffer.append(payload);
+}
+
 bool Invalid::parse(Message &m, std::string_view buffer) noexcept {
   m = Invalid{std::string_view{buffer.data() - 4, buffer.data()}, buffer};
   return true;
@@ -245,6 +254,8 @@ Message::Message(std::string_view buffer) noexcept
   if (buffer.length() >= 4) {
     // If this fails, we're already initialized to the Invalid state.
     Parser<Message, variant>{}(*this, buffer);
+  } else {
+    NoMessage::parse(*this, buffer);
   }
 }
 

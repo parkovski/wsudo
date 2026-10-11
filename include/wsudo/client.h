@@ -13,6 +13,7 @@ class Client {
 public:
   class Connection {
     constexpr static int MaxConnectAttempts = 3;
+    std::wstring _pipeName;
     wil::unique_hfile _pipe;
     std::string _buffer;
 
@@ -20,6 +21,8 @@ public:
     // Throws HRESULT on connection failure.
     explicit Connection(const std::wstring &pipeName,
                         int maxAttempts = MaxConnectAttempts);
+
+    void connect(int maxAttempts = MaxConnectAttempts);
 
     const std::string &buffer() const noexcept {
       return _buffer;

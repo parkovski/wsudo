@@ -1,6 +1,8 @@
+#include "wsudo/message.h"
 #include "wsudo/wsudo.h"
 #include "wsudo/server.h"
 #include "wsudo/tokenmanager.h"
+#include <variant>
 
 #pragma comment(lib, "Advapi32.lib")
 
@@ -102,7 +104,7 @@ void Server::quit(int exitCode) {
   }
 }
 
-wscoro::task<bool> Server::dispatch(Connection &conn) {
+wscoro::task<> Server::dispatch(Connection &conn) {
   while (true) {
     auto message = co_await conn.recv();
 
@@ -145,11 +147,11 @@ wscoro::task<bool> Server::dispatch(Connection &conn) {
       } else {
         co_await conn.send(msg::AccessDenied{});
       }
+    } else if (std::holds_alternative<msg::NoMessage>(message)) {
+      log::trace("Received NoMessage: {}.", std::get<msg::NoMessage>(message).payload);
+      break;
     } else {
       log::warn("Don't know how to deal with message {}.", message.getCode());
-      co_return false;
     }
   }
-
-  co_return true;
 }
