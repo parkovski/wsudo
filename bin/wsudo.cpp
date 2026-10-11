@@ -17,10 +17,11 @@ int wmain(int argc, wchar_t *argv[]) {
     return HRESULT_FROM_WIN32(ERROR_INVALID_PARAMETER);
   }
 
-  std::unique_ptr<Client> client;
+  char cdata alignas(Client)[sizeof(Client)];
+  Client &client = *reinterpret_cast<Client *>(cdata);
+
   try {
-    client = std::make_unique<Client>(PipeFullPath, argc - 1, argv + 1);
-    Client client(PipeFullPath, argc - 1, argv + 1);
+    new (cdata) Client(PipeFullPath, argc - 1, argv + 1);
   } catch (wil::ResultException &e) {
     if (e.GetErrorCode() == HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND)) {
       log::critical("Pipe connection failed. Is the server running?");
@@ -29,5 +30,5 @@ int wmain(int argc, wchar_t *argv[]) {
   }
 
   log::debug("Client initialized");
-  return (int)(*client)();
+  return (int)client();
 }

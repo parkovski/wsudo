@@ -51,11 +51,21 @@ private:
   const wchar_t *const *_argv1;
   std::string _domain;
   std::string _username;
+  std::string _key;
 
   friend struct ::ClientTest;
 
   // Fills _username and, if applicable, _domain.
   void lookupUsername();
+
+  std::wstring getUserDirectory() const;
+
+  std::wstring getUserDirectoryFileName(std::wstring_view filename) const;
+
+  std::string
+  readPrivateFile(std::wstring_view name, bool create = false) const;
+
+  void writePrivateFile(std::wstring_view name, std::string_view text) const;
 
   // Disable echo and read a password from the console. Returns false if
   // reading was interrupted (e.g. by Ctrl-C).

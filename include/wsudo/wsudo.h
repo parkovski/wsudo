@@ -28,6 +28,15 @@ namespace wsudo {
 /// File path to the client-server communication pipe.
 extern const wchar_t *const PipeFullPath;
 
+/// User cached session key.
+extern const wchar_t *const UserSessionKeyFileName;
+
+/// User configuration file.
+extern const wchar_t *const UserConfigFileName;
+
+/// System configuration file.
+extern const wchar_t *const SystemConfigFileName;
+
 /// Pipe's buffer size in bytes.
 constexpr size_t PipeBufferSize = 128;
 

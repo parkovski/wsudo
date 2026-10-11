@@ -1,9 +1,19 @@
+#include "wsudo/message.h"
 #include "wsudo/wsudo.h"
+#include <fileapi.h>
+#include <handleapi.h>
+#include <variant>
+#include <wil/result_macros.h>
+#include <winbase.h>
+#include <winerror.h>
 #include "wsudo/client.h"
 
 #define SECURITY_WIN32
 #include <Security.h>
 #pragma comment(lib, "Secur32.lib")
+
+#include <UserEnv.h>
+#pragma comment(lib, "UserEnv.lib")
 
 using namespace wsudo;
 
@@ -47,6 +57,88 @@ void Client::lookupUsername() {
 
   log::debug("Current user: {}{}{}", _domain == "." ? "" : _domain,
              (_domain.empty() || _domain == ".") ? "" : "\\", _username);
+}
+
+std::wstring Client::getUserDirectory() const {
+  wil::unique_handle processToken;
+  THROW_IF_WIN32_BOOL_FALSE(
+    OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, processToken.put())
+  );
+  DWORD size;
+  GetUserProfileDirectory(processToken.get(), nullptr, &size);
+  std::wstring profileDir;
+  profileDir.resize(size);
+  THROW_IF_WIN32_BOOL_FALSE(
+    GetUserProfileDirectory(processToken.get(), profileDir.data(), &size)
+  );
+  profileDir.erase(profileDir.cend() - 1); // NUL
+  return profileDir;
+}
+
+std::wstring Client::getUserDirectoryFileName(std::wstring_view filename)
+    const {
+  auto path = getUserDirectory();
+  if (!path.ends_with(L'\\')) {
+    path.push_back(L'\\');
+  }
+  path.append(filename);
+  return path;
+}
+
+std::string
+Client::readPrivateFile(std::wstring_view name, bool create) const {
+  auto path = getUserDirectoryFileName(name);
+  log::trace(L"Reading private file \"{}\".", path);
+
+  DWORD openMode = create ? OPEN_ALWAYS : OPEN_EXISTING;
+  SECURITY_ATTRIBUTES sec;
+  sec.nLength = sizeof(SECURITY_ATTRIBUTES);
+  sec.lpSecurityDescriptor = nullptr;
+  sec.bInheritHandle = false;
+  wil::unique_hfile file{
+    CreateFile(path.c_str(), GENERIC_READ | READ_CONTROL, 0, &sec, openMode,
+               FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, nullptr)
+  };
+  THROW_LAST_ERROR_IF(file.get() == INVALID_HANDLE_VALUE);
+  // TODO: Verify that this file is only accessible by its owner.
+
+  std::string text;
+  DWORD fileSize = GetFileSize(file.get(), nullptr);
+  log::trace("Reading {} bytes.", fileSize);
+  THROW_LAST_ERROR_IF(fileSize == INVALID_FILE_SIZE);
+  text.resize(fileSize);
+
+  DWORD bytesRead, totalBytesRead = 0;
+  while (totalBytesRead < fileSize) {
+    THROW_IF_WIN32_BOOL_FALSE(
+      ReadFile(file.get(), text.data() + totalBytesRead,
+               fileSize - totalBytesRead, &bytesRead, nullptr)
+    );
+    totalBytesRead += bytesRead;
+  }
+
+  return text;
+}
+
+void Client::writePrivateFile(std::wstring_view name, std::string_view text)
+    const {
+  auto path = getUserDirectoryFileName(name);
+  log::trace(L"Writing private file \"{}\".", path);
+
+  wil::unique_hfile file{
+    CreateFile(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS,
+               FILE_ATTRIBUTE_NORMAL, nullptr)
+  };
+  THROW_LAST_ERROR_IF(file.get() == INVALID_HANDLE_VALUE);
+
+  DWORD bytesWritten, totalBytesWritten = 0;
+  while (totalBytesWritten < text.length()) {
+    THROW_IF_WIN32_BOOL_FALSE(
+      WriteFile(file.get(), text.data() + totalBytesWritten,
+                text.length() - totalBytesWritten, &bytesWritten, nullptr)
+    );
+    totalBytesWritten += bytesWritten;
+  }
 }
 
 bool Client::readConsolePassword(std::string &password) const {
@@ -140,27 +232,82 @@ Client::createSuspendedProcess() const {
 }
 
 bool Client::userHasActiveSession() {
-  _conn.send(msg::QuerySession{_domain, _username, "key"});
+  if (_key.empty()) {
+    return false;
+  }
+  _conn.send(msg::QuerySession{_domain, _username, _key});
   return std::holds_alternative<msg::Success>(_conn.recv());
 }
 
 bool Client::validateCredentials(std::string &password) {
-  _conn.send(msg::Credential{_domain, _username, password});
-  auto res = _conn.recv();
-  if (std::holds_alternative<msg::Success>(res)) {
-    return true;
+  Message res;
+  try {
+    _conn.send(msg::Credential{_domain, _username, password});
+    res = _conn.recv();
+  } catch (wil::ResultException &e) {
+    log::error("Validate credentials failed: (0x{:X}): {}",
+               static_cast<unsigned>(e.GetErrorCode()),
+               lastErrorString(e.GetErrorCode()));
+    return false;
   }
-  log::error("Invalid credentials.");
+  if (std::holds_alternative<msg::Success>(res)) {
+    log::warn("Credential validation returned success but a session key is needed.");
+    return true;
+  } else if (std::holds_alternative<msg::InitSession>(res)) {
+    try {
+      log::trace("Initializing new session.");
+      _key = std::get<msg::InitSession>(res).key;
+      writePrivateFile(UserSessionKeyFileName, _key);
+      return true;
+    } catch (wil::ResultException &e) {
+      log::warn("Failed to initialize session: (0x{:X}): {}",
+                static_cast<unsigned>(e.GetErrorCode()),
+                lastErrorString(e.GetErrorCode()));
+      return false;
+    }
+  } else if (std::holds_alternative<msg::Failure>(res)) {
+    log::error("Invalid credentials.");
+  } else if (std::holds_alternative<msg::Invalid>(res)) {
+    auto &inv = std::get<msg::Invalid>(res);
+    log::error(
+      "Received invalid message: {}: {}", inv.originalCode, inv.payload
+    );
+  } else {
+    log::error(
+      "Unknown message while validating credentials: {}.", res.getCode()
+    );
+  }
   return false;
 }
 
 bool Client::bless(HANDLE process) {
-  _conn.send(msg::Bless{"key", process});
-  auto res = _conn.recv();
-  if (std::holds_alternative<msg::Success>(res)) {
-    return true;
+  Message res;
+
+  if (_key.empty()) {
+    log::error("Missing session key.");
+    return false;
   }
-  log::error("Bless (elevate) process failed.");
+
+  try {
+    _conn.send(msg::Bless{_key, process});
+    res = _conn.recv();
+  } catch (wil::ResultException &e) {
+    log::error(
+      "Could not write to pipe: (0x{:X}: {})",
+      static_cast<unsigned>(e.GetErrorCode()),
+      lastErrorString(e.GetErrorCode())
+    );
+    return false;
+  }
+
+  if (std::holds_alternative<msg::Success>(res)) {
+    log::trace("Bless process succeeded.");
+    return true;
+  } else if (std::holds_alternative<msg::Failure>(res)) {
+    log::error("Bless process failed.");
+  } else if (std::holds_alternative<msg::AccessDenied>(res)) {
+    log::error("Bless: access denied.");
+  }
   return false;
 }
 
@@ -183,6 +330,19 @@ Client::Client(const std::wstring &pipeName, int argc,
   , _argv1{argv + 1}
 {
   lookupUsername();
+  try {
+    _key = readPrivateFile(UserSessionKeyFileName);
+  } catch (wil::ResultException &e) {
+    if (e.GetErrorCode() == HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND)) {
+      log::debug("Session key not found.");
+    } else if (e.GetErrorCode() == HRESULT_FROM_WIN32(ERROR_ACCESS_DENIED)) {
+      log::warn("Access denied to session key file.");
+    } else {
+      log::warn("Exception while reading session key: (0x{:X}): {}",
+                static_cast<unsigned>(e.GetErrorCode()),
+                lastErrorString(e.GetErrorCode()));
+    }
+  }
 }
 
 HRESULT Client::operator()() {

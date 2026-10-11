@@ -8,5 +8,8 @@ namespace log {
 }
 
 const wchar_t *const PipeFullPath = L"\\\\.\\pipe\\wsudo_token_server";
+const wchar_t *const UserSessionKeyFileName = L".wsudo_session";
+const wchar_t *const UserConfigFileName = L".wsudo.conf";
+const wchar_t *const SystemConfigFileName = L"wsudoers";
 
 } // namespace wsudo

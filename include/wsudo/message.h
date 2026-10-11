@@ -11,6 +11,17 @@ namespace wsudo::msg {
   struct Invalid {
     static constexpr std::string_view code{"INVM"};
 
+    std::string_view originalCode;
+    std::string_view payload;
+
+    Invalid() = default;
+
+    constexpr explicit Invalid(std::string_view originalCode,
+                               std::string_view payload) noexcept
+      : originalCode{originalCode}
+      , payload{payload}
+    {}
+
     static bool parse(Message &m, std::string_view buffer) noexcept;
     void serialize(std::string &buffer) const;
   };
@@ -148,6 +159,12 @@ namespace wsudo::msg {
     explicit Message(std::string_view buffer) noexcept;
 
     void serialize(std::string &buffer) const;
+
+    std::string_view getCode() const noexcept {
+      return std::visit([]<class T>(T &&) {
+        return std::remove_cvref_t<T>::code;
+      }, *this);
+    }
   };
 } // namespace wsudo::msg
 

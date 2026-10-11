@@ -35,7 +35,6 @@ Client::Connection::Connection(const std::wstring &pipeName, int maxAttempts) {
 void Client::Connection::sendBuffer() {
   DWORD bytes = (DWORD)_buffer.length();
   if (!WriteFile(_pipe.get(), _buffer.data(), bytes, &bytes, nullptr)) {
-    log::error("WriteFile failed.");
     THROW_LAST_ERROR();
   }
   emptyBuffer();
@@ -59,7 +58,6 @@ void Client::Connection::recvBuffer() {
       continue;
     }
 
-    log::error("ReadFile failed.");
     THROW_WIN32(err);
   }
 }

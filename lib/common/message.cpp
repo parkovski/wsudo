@@ -3,11 +3,8 @@
 using namespace wsudo::msg;
 
 bool Invalid::parse(Message &m, std::string_view buffer) noexcept {
-  if (buffer.length() == 0) {
-    m = Invalid{};
-    return true;
-  }
-  return false;
+  m = Invalid{std::string_view{buffer.data() - 4, buffer.data()}, buffer};
+  return true;
 }
 
 void Invalid::serialize(std::string &buffer) const {}
