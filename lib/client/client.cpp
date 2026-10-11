@@ -67,8 +67,6 @@ bool Client::readConsolePassword(std::string &password) const {
   std::wstring wpassword;
   WSUDO_SCOPE_EXIT { wpassword.assign(wpassword.length(), L'\0'); };
   while (true) {
-    // TODO: Some characters are 2 wchars. Backspace should handle this. Also
-    // should they be read 2 at a time?
     wchar_t ch;
     DWORD chRead;
     if (!ReadConsole(hStdIn, &ch, 1, &chRead, nullptr)) {
@@ -80,7 +78,16 @@ bool Client::readConsolePassword(std::string &password) const {
       break;
     } else if (ch == 8 || ch == 0x7F) {
       // Backspace
-      if (wpassword.length() > 0) {
+      if (wpassword.length() > 1) {
+        auto lo = *(wpassword.cend() - 1);
+        auto hi = *(wpassword.cend() - 2);
+        if (lo >= 0xD800 && lo <= 0xDBFF && hi >= 0xDC00 && hi < 0xDFFF) {
+          // Surrogate pair.
+          wpassword.erase(wpassword.cend() - 2);
+        } else {
+          wpassword.erase(wpassword.cend() - 1);
+        }
+      } else if (wpassword.length() > 0) {
         wpassword.erase(wpassword.cend() - 1);
       }
     } else if (ch == 3) {
