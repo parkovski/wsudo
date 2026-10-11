@@ -50,11 +50,16 @@ bool Server::Connection::disconnect() {
 }
 
 wscoro::fire_and_forget Server::Connection::run() {
-  while (
-       co_await connect()
-    && co_await _server->dispatch(*this)
-    && disconnect()
-  );
+  while (true) {
+    if (!co_await connect()) {
+      break;
+    }
+    co_await _server->dispatch(*this);
+    if (!disconnect()) {
+      break;
+    }
+  }
+  log::debug("Server::Connection::run() finished.");
   clear();
 }
 

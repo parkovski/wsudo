@@ -147,7 +147,7 @@ wscoro::task<bool> Server::dispatch(Connection &conn) {
       }
     } else {
       log::warn("Don't know how to deal with message {}.", message.getCode());
-      co_await conn.send(msg::Invalid{});
+      co_return false;
     }
   }
 
