@@ -7,6 +7,7 @@
 namespace wsudo::msg {
   struct Message;
 
+  // No message or header too short.
   struct NoMessage {
     static constexpr std::string_view code{"NMSG"};
 
@@ -81,6 +82,7 @@ namespace wsudo::msg {
     void serialize(std::string &buffer) const;
   };
 
+  // Initialize session.
   struct InitSession {
     static constexpr std::string_view code{"ISES"};
 

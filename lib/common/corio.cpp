@@ -196,7 +196,7 @@ wscoro::task<size_t> CorIO::FileBase::write(std::string_view buffer) {
 
       case ERROR_BROKEN_PIPE:
         // TODO: Can WriteFile return this error?
-        log::info("CorIO::FileBase::write pipe disconnected by client.");
+        log::info("Pipe disconnected by client.");
         co_return bufferOffset;
 
       case ERROR_INVALID_USER_BUFFER:
@@ -321,7 +321,7 @@ wscoro::task<size_t> CorIO::Pipe::read(std::string &buffer) {
                  bytes, offset());
       continue;
     } else if (err == ERROR_BROKEN_PIPE) {
-      log::info("CorIO::Pipe::read pipe disconnected by client.");
+      log::info("Pipe disconnected by client.");
       co_return 0;
     }
 
