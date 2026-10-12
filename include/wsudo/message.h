@@ -91,7 +91,7 @@ namespace wsudo::msg {
     constexpr explicit InitSession(std::string_view domain,
                                    std::string_view username,
                                    std::string_view key) noexcept
-      : domain{domain.empty() ? "." : domain}
+      : domain{domain}
       , username{username}
       , key{key}
     {}
@@ -111,7 +111,7 @@ namespace wsudo::msg {
     constexpr explicit QuerySession(std::string_view domain,
                                     std::string_view username,
                                     std::string_view key) noexcept
-      : domain{domain.empty() ? "." : domain}
+      : domain{domain}
       , username{username}
       , key{key}
     {}
@@ -131,7 +131,7 @@ namespace wsudo::msg {
     constexpr explicit Credential(std::string_view domain,
                                   std::string_view username,
                                   std::string_view password) noexcept
-      : domain{domain.empty() ? "." : domain}
+      : domain{domain}
       , username{username}
       , password{password}
     {}

@@ -36,27 +36,23 @@ void Client::lookupUsername() {
     THROW_WIN32(err);
   }
 
-  if (auto slash = username.find(L'\\'); slash != std::wstring::npos) {
-    domain = username.substr(0, slash);
-    _domain = to_utf8(domain);
-    username.erase(0, slash + 1);
-  }
+  auto slash = username.find(L'\\');
+  domain = username.substr(0, slash);
+  _domain = to_utf8(domain);
+  username.erase(0, slash + 1);
   _username = to_utf8(username);
 
-  if (!domain.empty()) {
-    wchar_t computerName[MAX_COMPUTERNAME_LENGTH + 1];
-    DWORD computerNameLength = MAX_COMPUTERNAME_LENGTH;
-    if (GetComputerName(computerName, &computerNameLength)) {
-      if (CompareString(LOCALE_INVARIANT, NORM_IGNORECASE,
-                        computerName, -1, domain.c_str(), -1) == CSTR_EQUAL) {
-        // Ignore local domain.
-        _domain = ".";
-      }
+  wchar_t computerName[MAX_COMPUTERNAME_LENGTH + 1];
+  DWORD computerNameLength = MAX_COMPUTERNAME_LENGTH;
+  if (GetComputerName(computerName, &computerNameLength)) {
+    if (CompareString(LOCALE_INVARIANT, NORM_IGNORECASE,
+                      computerName, -1, domain.c_str(), -1) == CSTR_EQUAL) {
+      // Ignore local domain.
+      _domain = ".";
     }
   }
 
-  log::debug("Current user: {}{}{}", _domain == "." ? "" : _domain,
-             (_domain.empty() || _domain == ".") ? "" : "\\", _username);
+  log::debug("Current user: {}\\{}", _domain, _username);
 }
 
 std::wstring Client::getUserDirectory() const {
@@ -142,7 +138,7 @@ void Client::writePrivateFile(std::wstring_view name, std::string_view text)
 }
 
 bool Client::readConsolePassword(std::string &password) const {
-  if (_domain.empty() || _domain == ".") {
+  if (_domain == ".") {
     log::print("[wsudo] password for {}: ", _username);
   } else {
     log::print("[wsudo] password for {}\\{}: ", _domain, _username);

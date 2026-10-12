@@ -103,7 +103,7 @@ done_parsing:
 
 template<class M>
 static void serializeSessionMessage(const M &m, std::string &buffer) {
-  if (m.domain.empty() || m.domain == ".") {
+  if (m.domain == ".") {
     buffer
       .append(m.username)
       .append(1, '\0')
@@ -180,7 +180,7 @@ done_parsing:
 }
 
 void Credential::serialize(std::string &buffer) const {
-  if (!domain.empty() && domain != ".") {
+  if (domain != ".") {
     buffer.append(domain).append(1, '\\');
   }
   buffer.append(username);
