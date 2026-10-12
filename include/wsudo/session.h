@@ -65,6 +65,7 @@ private:
 
 
 class SessionManager {
+  constexpr static unsigned DefaultTtlSeconds = 60 * 5;
   unsigned _defaultTtlSeconds;
   wil::unique_handle _timer;
   std::wstring _localDomain;

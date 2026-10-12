@@ -217,7 +217,6 @@ Client::createSuspendedProcess() const {
   // The system is allowed to modify this string, so we can't use c_str as it
   // returns a const pointer.
   commandLine.push_back(L'\0');
-  commandLine.push_back(L'\0');
   if (!CreateProcess(nullptr, commandLine.data(), nullptr, nullptr, true,
                      CREATE_UNICODE_ENVIRONMENT | CREATE_SUSPENDED,
                      nullptr, nullptr, &si, &pi)) {
@@ -289,7 +288,7 @@ bool Client::bless(HANDLE process) {
     res = _conn.recv();
   } catch (wil::ResultException &e) {
     log::error(
-      "Could not write to pipe: (0x{:X}: {})",
+      "Could not write to pipe: (0x{:X}): {}",
       static_cast<unsigned>(e.GetErrorCode()),
       lastErrorString(e.GetErrorCode())
     );
@@ -375,5 +374,6 @@ HRESULT Client::operator()() {
     return ERROR_ACCESS_DENIED;
   }
 
+  log::debug("Resuming process {}.", pi.hProcess);
   return (HRESULT)resume(pi, true);
 }
