@@ -17,81 +17,43 @@
 
 namespace wsudo {
 
-class Session;
-
-class SessionManager {
-  unsigned _defaultTtlSeconds;
-  wil::unique_handle _timer;
-  std::wstring _localDomain;
-  std::unordered_map<std::wstring_view, std::shared_ptr<Session>> _sessions;
-
-public:
-  explicit SessionManager(unsigned defaultTtlSeconds = 0) noexcept;
-
-  SessionManager(const SessionManager &) = delete;
-  SessionManager &operator=(const SessionManager &) = delete;
-
-  SessionManager(SessionManager &&) = default;
-  SessionManager &operator=(SessionManager &&) = default;
-
-  std::shared_ptr<Session> find(std::wstring_view username,
-                                std::wstring_view domain = {});
-
-  template<typename... Args>
-  std::shared_ptr<Session> create(Args &&...args) {
-    return store(Session(*this, std::forward<Args>(args)...));
-  }
-
-  unsigned defaultTtlSeconds() const {
-    return _defaultTtlSeconds;
-  }
-
-private:
-  std::shared_ptr<Session> store(Session &&session);
-};
+class SessionManager;
 
 class Session {
-  friend class SessionManager;
-
-  // Password is a move reference in the hopes that we will get the only copy
-  // and erase it after we're done with it.
-  Session(const SessionManager &manager, std::wstring_view username,
-          std::wstring_view domain, std::wstring &&password,
-          unsigned ttlSeconds) noexcept;
-
-  Session(const SessionManager &manager, std::wstring_view username,
-          std::wstring_view domain, std::wstring &&password) noexcept;
-
 public:
-  Session(const Session &) = delete;
-  Session &operator=(const Session &) = delete;
+  explicit Session(SessionManager &manager, std::wstring domain,
+                   std::wstring username, std::wstring password,
+                   unsigned ttlSeconds);
 
-  Session(Session &&) = default;
-  Session &operator=(Session &&) = delete;
-
-  std::wstring_view username() const {
-    return _username;
-  }
-
-  std::wstring_view domain() const {
+  std::wstring_view domain() const noexcept {
     return _domain;
   }
 
-  HANDLE token() const {
+  std::wstring_view username() const noexcept {
+    return _username;
+  }
+
+  std::string_view key() const noexcept {
+    return _key;
+  }
+
+  HANDLE token() const noexcept {
     return _token.get();
   }
 
-  PSID psid() const {
+  PSID psid() const noexcept {
     return _pSid.get();
   }
 
-  explicit operator bool() const {
+  explicit operator bool() const noexcept {
     return !!_token;
   }
 
 private:
-  const std::wstring _username;
+  SessionManager *_sessionManager;
   const std::wstring _domain;
+  const std::wstring _username;
+  const std::string _key;
   wil::unique_handle _token;
   wil::unique_sid _pSid;
   // The amount of time this session will be kept open without being referenced.
@@ -99,6 +61,38 @@ private:
   unsigned _ttlResetSeconds;
   // The time when this session expires if left untouched.
   unsigned _ttlExpiresSeconds;
+};
+
+
+class SessionManager {
+  unsigned _defaultTtlSeconds;
+  wil::unique_handle _timer;
+  std::wstring _localDomain;
+  std::unordered_map<std::string, std::shared_ptr<Session>> _sessions;
+  static constexpr unsigned KeyLength = 64;
+
+public:
+  explicit SessionManager(unsigned defaultTtlSeconds = 0) noexcept;
+
+  SessionManager(const SessionManager &) = delete;
+  SessionManager &operator=(const SessionManager &) = delete;
+
+  SessionManager(SessionManager &&) = delete;
+  SessionManager &operator=(SessionManager &&) = delete;
+
+  std::shared_ptr<Session> find(std::string_view key);
+
+  std::shared_ptr<Session>
+  create(std::wstring domain, std::wstring username,
+         std::wstring password, unsigned ttlSeconds = 0);
+
+  std::string makeKey() const;
+
+  unsigned defaultTtlSeconds() const {
+    return _defaultTtlSeconds;
+  }
+
+  explicit operator bool() const noexcept { return !_localDomain.empty(); }
 };
 
 } // namespace wsudo

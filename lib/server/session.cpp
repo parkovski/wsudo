@@ -2,14 +2,36 @@
 #include "wsudo/wsudo.h"
 #include "wsudo/session.h"
 #include <cstdlib>
+#include <random>
 
 #define NT_SUCCESS(status) ((long)(status) >= 0)
 
 using namespace wsudo;
 
+Session::Session(SessionManager &sessionManager, std::wstring domain,
+                 std::wstring username, std::wstring password,
+                 unsigned ttlSeconds)
+  : _sessionManager(&sessionManager)
+  , _domain{std::move(domain)}
+  , _username{std::move(username)}
+  , _key{sessionManager.makeKey()}
+  , _ttlResetSeconds{ttlSeconds}
+  , _ttlExpiresSeconds{ttlSeconds}
+{
+  if (!LogonUserExW(_username.c_str(), _domain.c_str(), password.c_str(),
+                    LOGON32_LOGON_NETWORK, LOGON32_PROVIDER_DEFAULT,
+                    _token.put(), _pSid.put(), nullptr, nullptr, nullptr))
+  {
+    log::debug("LogonUserExW failed: {}", lastErrorString());
+  }
+
+  password.assign(password.length(), L'\0');
+}
+
 SessionManager::SessionManager(unsigned defaultTtlSeconds) noexcept
-  : _defaultTtlSeconds{defaultTtlSeconds},
-    _timer{CreateWaitableTimerW(nullptr, false, nullptr)}
+  : _defaultTtlSeconds{defaultTtlSeconds}
+  , _timer{CreateWaitableTimerW(nullptr, false, nullptr)}
+  , _localDomain{}
 {
   NTSTATUS status;
   LSA_OBJECT_ATTRIBUTES attr{};
@@ -43,64 +65,43 @@ SessionManager::SessionManager(unsigned defaultTtlSeconds) noexcept
             _localDomain);
 }
 
-std::shared_ptr<Session> SessionManager::find(std::wstring_view username,
-                                              std::wstring_view domain)
-{
-  // TODO: Use full user@domain format.
-  (void)domain;
-  auto it = _sessions.find(username);
+std::shared_ptr<Session>
+SessionManager::find(std::string_view key) {
+  auto it = _sessions.find(std::string{key});
   if (it == _sessions.end()) {
-    return std::shared_ptr<Session>{};
+    return {};
   }
   return it->second;
 }
 
-std::shared_ptr<Session> SessionManager::store(Session &&session) {
-  //std::wstring_view domain{session.domain()};
-  std::wstring_view name{session.username()};
-  if (!session) {
-    log::info(L"Failed login attempt for {}.", name);
-    return std::shared_ptr<Session>{};
+std::shared_ptr<Session>
+SessionManager::create(std::wstring domain, std::wstring username,
+                       std::wstring password, unsigned ttlSeconds) {
+  if (ttlSeconds == 0) {
+    ttlSeconds = _defaultTtlSeconds;
   }
-  log::debug(L"Session username: {}.", name);
-  auto [it, inserted] = _sessions.try_emplace(
-    name, std::make_shared<Session>(std::move(session))
+
+  auto session = std::make_shared<Session>(
+    *this, std::move(domain), std::move(username), std::move(password),
+    ttlSeconds
   );
-  if (!inserted) {
-    log::warn(L"Session already exists for '{}'.", name);
-  }
-  return it->second;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// Session                                                                    //
-////////////////////////////////////////////////////////////////////////////////
-
-Session::Session(const SessionManager &, std::wstring_view username,
-                 std::wstring_view domain, std::wstring &&password,
-                 unsigned ttlSeconds) noexcept
-  : _username{username},
-    _domain{domain},
-    _ttlResetSeconds{ttlSeconds},
-    _ttlExpiresSeconds{0}
-{
-  PVOID pProfileBuffer;
-  DWORD profileLength;
-  QUOTA_LIMITS quotaLimits;
-  if (!LogonUserExW(_username.c_str(), _domain.c_str(), password.c_str(),
-                    LOGON32_LOGON_NETWORK, LOGON32_PROVIDER_DEFAULT,
-                    &_token, &_pSid, &pProfileBuffer, &profileLength,
-                    &quotaLimits))
-  {
-    log::debug("LogonUserExW failed: {}", lastErrorString());
+  if (!*session) {
+    return {};
   }
 
-  // TODO: Set expiration time.
+  _sessions.emplace(std::string{session->key()}, session);
+  return session;
 }
 
-Session::Session(const SessionManager &manager, std::wstring_view username,
-                 std::wstring_view domain, std::wstring &&password) noexcept
-  : Session(manager, username, domain, std::move(password),
-            manager.defaultTtlSeconds())
-{
+std::string SessionManager::makeKey() const {
+  std::string key;
+  key.reserve(KeyLength);
+  static std::random_device random;
+  static std::uniform_int_distribution<unsigned> distribution(0, 63);
+  static const char *const base64 =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+  for (unsigned i = 0; i < KeyLength; ++i) {
+    key.push_back(base64[distribution(random)]);
+  }
+  return key;
 }

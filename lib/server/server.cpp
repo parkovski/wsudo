@@ -76,6 +76,7 @@ HANDLE Server::initPipe(bool first) {
 
 Server::Server(std::wstring pipeName)
   : _pipeName{std::move(pipeName)}
+  , _sessionManager{}
 {}
 
 int Server::operator()(int nUserThreads, int nSystemThreads) {
@@ -112,43 +113,43 @@ wscoro::task<> Server::dispatch(Connection &conn) {
 
     if (std::holds_alternative<msg::QuerySession>(message)) {
       auto &qs = std::get<msg::QuerySession>(message);
-      if (qs.key == "test") {
+      auto session = _sessionManager.find(qs.key);
+      if (!session) {
+        co_await conn.send(msg::Failure{});
+      } else {
+        co_await conn.send(msg::Success{});
+      }
+    } else if (std::holds_alternative<msg::Bless>(message)) {
+      auto &bless = std::get<msg::Bless>(message);
+      auto session = _sessionManager.find(bless.key);
+      if (!session) {
+        co_await conn.send(msg::AccessDenied{});
+        continue;
+      }
+      auto clientPid = conn.clientProcessId();
+      auto handle = bless.hRemoteProcess;
+      TokenManager tm{clientPid};
+      if (tm.createServerLaunchToken() && tm.applyToken(handle)) {
         co_await conn.send(msg::Success{});
       } else {
         co_await conn.send(msg::Failure{});
       }
-    } else if (std::holds_alternative<msg::Bless>(message)) {
-      auto key = std::get<msg::Bless>(message).key;
-      if (key != "test") {
-        co_await conn.send(msg::AccessDenied{});
-      }
-      auto clientPid = conn.clientProcessId();
-      auto handle = std::get<msg::Bless>(message).hRemoteProcess;
-      TokenManager tm{clientPid};
-      if (tm.createServerLaunchToken() && tm.applyToken(handle)) {
-        message = msg::Success{};
-      } else {
-        message = msg::Failure{};
-      }
-      co_await conn.send(message);
     } else if (std::holds_alternative<msg::Credential>(message)) {
-      auto clientPid = conn.clientProcessId();
-      TokenManager tm{clientPid};
       auto &cred = std::get<msg::Credential>(message);
       auto domainCopy = std::string{cred.domain};
       auto usernameCopy = std::string{cred.username};
-      auto domain = to_utf16(cred.domain);
-      auto username = to_utf16(cred.username);
-      auto password = to_utf16(cred.password);
-      if (tm.logon(domain, username, password)) {
+      auto session = _sessionManager.create(
+        to_utf16(cred.domain), to_utf16(cred.username),
+        to_utf16(cred.password)
+      );
+      if (session && *session) {
         co_await conn.send(msg::InitSession{
-          domainCopy, usernameCopy, "test"
+          domainCopy, usernameCopy, session->key()
         });
       } else {
         co_await conn.send(msg::AccessDenied{});
       }
     } else if (std::holds_alternative<msg::NoMessage>(message)) {
-      log::trace("Received NoMessage: {}.", std::get<msg::NoMessage>(message).payload);
       break;
     } else {
       log::warn("Don't know how to deal with message {}.", message.getCode());
