@@ -28,6 +28,7 @@ int wmain(int argc, wchar_t *argv[]) {
     }
     return (int)e.GetErrorCode();
   }
+  WSUDO_SCOPE_EXIT { client.~Client(); };
 
   log::debug("Client initialized");
   return (int)client();
