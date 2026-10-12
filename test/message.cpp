@@ -1,18 +1,19 @@
 #include "wsudo/message.h"
 
 #include <catch2/catch_all.hpp>
+#include <variant>
 
 using namespace wsudo::msg;
 using namespace std::string_view_literals;
 
-TEST_CASE("Message defaults to invalid", "[message]") {
+TEST_CASE("Message defaults to NoMessage", "[message]") {
   Message m;
-  REQUIRE(std::holds_alternative<Invalid>(m));
+  REQUIRE(std::holds_alternative<NoMessage>(m));
 }
 
-TEST_CASE("Empty buffer deserializes to invalid", "[message]") {
+TEST_CASE("Empty buffer deserializes to NoMessage", "[message]") {
   Message m{std::string_view{}};
-  REQUIRE(std::holds_alternative<Invalid>(m));
+  REQUIRE(std::holds_alternative<NoMessage>(m));
 }
 
 TEST_CASE("Unknown code deserializes to invalid", "[message]") {
@@ -130,6 +131,38 @@ TEST_CASE("BLES with wrong size handle deserializes to invalid", "[message]") {
   REQUIRE(std::get<Bless>(*good).hRemoteProcess == p);
 }
 
+TEST_CASE("NoMessage and Invalid quirks", "[message]") {
+  Message m;
+  std::string buf;
+  buf.reserve(16);
+
+  {
+    buf.clear();
+    REQUIRE(std::holds_alternative<NoMessage>(m));
+    m.serialize(buf);
+    REQUIRE(buf.empty());
+    Message m2{"Hi"};
+    REQUIRE(std::holds_alternative<NoMessage>(m2));
+    REQUIRE(std::get<NoMessage>(m2).payload == "Hi"sv);
+    buf.clear();
+    m2.serialize(buf);
+    REQUIRE(buf == "Hi"sv);
+  }
+
+  {
+    buf.clear();
+    (m = Invalid{}).serialize(buf);
+    REQUIRE(buf == "INVM"sv);
+    Message m2{"XXXXfoo"};
+    REQUIRE(std::holds_alternative<Invalid>(m2));
+    REQUIRE(std::get<Invalid>(m2).originalCode == "XXXX"sv);
+    REQUIRE(std::get<Invalid>(m2).payload == "foo"sv);
+    buf.clear();
+    m2.serialize(buf);
+    REQUIRE(buf == "XXXXfoo"sv);
+  }
+}
+
 TEST_CASE("Message round trip", "[message]") {
   Message m;
   std::string buf;
@@ -138,9 +171,29 @@ TEST_CASE("Message round trip", "[message]") {
   {
     buf.clear();
     m.serialize(buf);
+    REQUIRE(buf.empty());
+    Message m2{buf};
+    REQUIRE(std::holds_alternative<NoMessage>(m2));
+    REQUIRE(std::get<NoMessage>(m2).payload.empty());
+  }
+
+  {
+    buf.clear();
+    (m = Invalid{}).serialize(buf);
     REQUIRE(buf == "INVM"sv);
     Message m2{buf};
     REQUIRE(std::holds_alternative<Invalid>(m2));
+    REQUIRE(std::get<Invalid>(m2).originalCode == "INVM"sv);
+    REQUIRE(std::get<Invalid>(m2).payload.empty());
+  }
+
+  {
+    buf.clear();
+    (m = Invalid{"XXXX", "foo"}).serialize(buf);
+    Message m2{buf};
+    REQUIRE(std::holds_alternative<Invalid>(m2));
+    REQUIRE(std::get<Invalid>(m2).originalCode == "XXXX"sv);
+    REQUIRE(std::get<Invalid>(m2).payload == "foo"sv);
   }
 
   {

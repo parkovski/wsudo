@@ -29,7 +29,7 @@ namespace wsudo::msg {
     std::string_view originalCode;
     std::string_view payload;
 
-    Invalid() = default;
+    constexpr Invalid() noexcept : originalCode{code}, payload{} {}
 
     constexpr explicit Invalid(std::string_view originalCode,
                                std::string_view payload) noexcept

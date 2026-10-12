@@ -8,15 +8,24 @@ bool NoMessage::parse(Message &m, std::string_view buffer) noexcept {
 }
 
 void NoMessage::serialize(std::string &buffer) const {
-  buffer.append(payload);
+  // Overwrite buffer, potentially with an empty string.
+  buffer = payload;
 }
 
 bool Invalid::parse(Message &m, std::string_view buffer) noexcept {
+  // This is ok because we pass buffer.substr(4), so data() - 4 is guaranteed
+  // to be in the same allocation.
   m = Invalid{std::string_view{buffer.data() - 4, buffer.data()}, buffer};
   return true;
 }
 
-void Invalid::serialize(std::string &buffer) const {}
+void Invalid::serialize(std::string &buffer) const {
+  if (!originalCode.empty()) {
+    // Overwrite the buffer with whatever junk was in there to start with.
+    buffer.clear();
+    buffer.append(originalCode).append(payload);
+  }
+}
 
 bool Success::parse(Message &m, std::string_view buffer) noexcept {
   if (buffer.length() == 0) {
@@ -74,9 +83,8 @@ static bool parseSessionMessage(Message &m, std::string_view buffer) noexcept {
   // Allow an empty domain but require a non-empty username and key.
   for (size_t i = 0; i < buffer.length(); ++i) {
     if (buffer[i] == '\\') {
-      domain = buffer.substr(0, i);
-      if (domain.empty()) {
-        domain = ".";
+      if (i != 0) {
+        domain = buffer.substr(0, i);
       }
       for (size_t j = i + 1; j < buffer.length(); ++j) {
         if (buffer[j] == '\0') {
@@ -145,9 +153,8 @@ bool Credential::parse(Message &m, std::string_view buffer) noexcept {
   // Allow an empty domain and/or password but require a non-empty username.
   for (size_t i = 0; i < buffer.length(); ++i) {
     if (buffer[i] == '\\') {
-      domain = buffer.substr(0, i);
-      if (domain.empty()) {
-        domain = ".";
+      if (i != 0) {
+        domain = buffer.substr(0, i);
       }
       for (size_t j = i + 1; j < buffer.length(); ++j) {
         if (buffer[j] == '\0') {
@@ -249,11 +256,12 @@ namespace {
 }
 
 Message::Message(std::string_view buffer) noexcept
-  : variant{Invalid{}}
+  : variant{NoMessage{}}
 {
   if (buffer.length() >= 4) {
-    // If this fails, we're already initialized to the Invalid state.
-    Parser<Message, variant>{}(*this, buffer);
+    if (!Parser<Message, variant>{}(*this, buffer)) {
+      Invalid::parse(*this, buffer.substr(4));
+    }
   } else {
     NoMessage::parse(*this, buffer);
   }

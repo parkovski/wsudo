@@ -67,7 +67,7 @@ wscoro::fire_and_forget Server::Connection::run() {
 wscoro::task<> Server::Connection::send(const Message &message) {
   clear();
   message.serialize(_buffer);
-  log::trace("Sending message {}.", message.getCode());
+  log::debug("Sending message {}.", message.getCode());
   WSUDO_SCOPE_EXIT_THIS { clear(); };
   co_await write(_buffer);
 }
