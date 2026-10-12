@@ -2,8 +2,6 @@
 
 #include <wil/resource.h>
 
-#include <string>
-
 namespace wsudo {
 
 // This class manages the user's sensitive information and decides whether to
@@ -64,13 +62,6 @@ class TokenManager {
 public:
   // Creates a TokenManager for the identity that owns the client process.
   TokenManager(DWORD clientProcessId);
-
-  // Returns true if the identity of this TokenManager is allowed to log on
-  // with the given domain/username, and the password is correct.
-  // The password will be overwritten with 0s and then cleared when this
-  // function returns.
-  bool logon(const std::wstring &domain, const std::wstring &username,
-             std::wstring &password);
 
   // Duplicates the server's token.
   bool createServerLaunchToken();
