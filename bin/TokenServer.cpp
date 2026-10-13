@@ -78,6 +78,60 @@ static bool isElevated() {
   return false;
 }
 
+SERVICE_STATUS g_serviceStatus;
+SERVICE_STATUS_HANDLE g_serviceStatusHandle;
+
+void WINAPI serviceCtrlHandler(DWORD ctrl) {
+  if (ctrl == SERVICE_STOP) {
+    g_serviceStatus.dwCurrentState = SERVICE_STOP_PENDING;
+    g_serviceStatus.dwControlsAccepted = 0;
+    SetServiceStatus(g_serviceStatusHandle, &g_serviceStatus);
+
+    g_server->quit();
+  }
+}
+
+VOID WINAPI serviceMain(DWORD argc, LPWSTR *argv) {
+  g_serviceStatusHandle = RegisterServiceCtrlHandler(
+    L"wsudo",
+    serviceCtrlHandler
+  );
+
+  if (!g_serviceStatusHandle) {
+    log::error("RegisterServiceCtrlHandler failed: (0x{:X}): {}",
+               GetLastError(), lastErrorString());
+    return;
+  }
+
+  // These SERVICE_STATUS members remain as set here
+
+  g_serviceStatus.dwServiceType = SERVICE_WIN32_OWN_PROCESS;
+  g_serviceStatus.dwServiceSpecificExitCode = 0;
+
+  // Report initial status to the SCM
+  g_serviceStatus.dwCurrentState = SERVICE_RUNNING; // SERVICE_START_PENDING
+  g_serviceStatus.dwWin32ExitCode = 0;
+  g_serviceStatus.dwWaitHint = 0; // 3000
+  g_serviceStatus.dwControlsAccepted = 0;
+  g_serviceStatus.dwCheckPoint = 0;
+  SetServiceStatus(g_serviceStatusHandle, &g_serviceStatus);
+
+  Server server{PipeFullPath};
+  g_server = &server;
+
+  // TODO: Put this on a server thread.
+  //g_serviceStatus.dwCurrentState = SERVICE_RUNNING;
+  //g_serviceStatus.dwControlsAccepted = SERVICE_ACCEPT_STOP;
+  //++g_serviceStatus.dwCheckPoint;
+  //SetServiceStatus(g_serviceStatusHandle, &g_serviceStatus);
+
+  int exitCode = server(2);
+
+  g_serviceStatus.dwWin32ExitCode = (DWORD)exitCode;
+  g_serviceStatus.dwCurrentState = SERVICE_STOPPED;
+  SetServiceStatus(g_serviceStatusHandle, &g_serviceStatus);
+}
+
 int wmain(int argc, wchar_t *argv[]) {
   g_isService = isRunningAsService();
   if (g_isService) {
@@ -176,9 +230,23 @@ int wmain(int argc, wchar_t *argv[]) {
     } else {
       log::info("Starting server. Press Ctrl-C to exit.");
     }
-  }
 
-  Server server{PipeFullPath};
-  g_server = &server;
-  return server(2);
+    Server server{PipeFullPath};
+    g_server = &server;
+    return server(2);
+  } else {
+    wchar_t serviceName[] = L"wsudo";
+    SERVICE_TABLE_ENTRY dispatchTable[] = {
+      { serviceName, serviceMain },
+      { nullptr, nullptr },
+    };
+    if (!StartServiceCtrlDispatcher(dispatchTable)) {
+      auto err = GetLastError();
+      log::error("StartServiceCtrlDispatcher failed: (0x{:X}): {}",
+                 err, lastErrorString(err));
+      return HRESULT_FROM_WIN32(err);
+    }
+
+    return (int)g_serviceStatus.dwWin32ExitCode;
+  }
 }
