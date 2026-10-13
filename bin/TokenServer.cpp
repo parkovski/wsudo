@@ -2,6 +2,7 @@
 #include "wsudo/server.h"
 
 #include <spdlog/sinks/stdout_color_sinks.h>
+#include <spdlog/sinks/win_eventlog_sink.h>
 
 #include <fmt/format.h>
 
@@ -11,8 +12,7 @@
 
 using namespace wsudo;
 
-static Server *g_server = nullptr;
-BOOL WINAPI consoleControlHandler(DWORD event) {
+static BOOL WINAPI consoleControlHandler(DWORD event) {
   const char *eventName;
   int exitCode = 0;
   switch (event) {
@@ -50,45 +50,132 @@ BOOL WINAPI consoleControlHandler(DWORD event) {
   return true;
 }
 
+static bool isRunningAsService() {
+  BOOL  bIsAService = false;
+  BYTE  sidService[SECURITY_MAX_SID_SIZE] = { 0 };
+  DWORD cbSidSize = SECURITY_MAX_SID_SIZE;
+
+  // Check if we are in the service group (S‒1‒5‒6).
+  if (CreateWellKnownSid(WinServiceSid, nullptr, &sidService, &cbSidSize)) {
+    CheckTokenMembership(nullptr, &sidService, &bIsAService);
+  }
+
+  return bIsAService;
+}
+
+static bool isElevated() {
+  HANDLE hToken = nullptr;
+  if (OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &hToken)) {
+    TOKEN_ELEVATION elevation;
+    DWORD cbSize = sizeof(elevation);
+    if (GetTokenInformation(hToken, TokenElevation, &elevation,
+                            sizeof(elevation), &cbSize)) {
+      CloseHandle(hToken);
+      return elevation.TokenIsElevated;
+    }
+    CloseHandle(hToken);
+  }
+  return false;
+}
+
 int wmain(int argc, wchar_t *argv[]) {
-  log::g_outLogger = spdlog::stdout_color_mt("wsudo.out");
-  log::g_outLogger->set_level(spdlog::level::trace);
-  log::g_errLogger = spdlog::stderr_color_mt("wsudo.err");
-  log::g_errLogger->set_level(spdlog::level::warn);
-#ifndef NDEBUG
-  // Set a more compact, readable log format for debugging.
-  spdlog::set_pattern("\033[90m[%T.%e]\033[m (#%5t) %^[%5l]%$ %v");
+  g_isService = isRunningAsService();
+  if (g_isService) {
+    auto sink = std::make_shared<spdlog::sinks::win_eventlog_sink_mt>("wsudo");
+    log::g_outLogger = std::make_shared<spdlog::logger>("wsudo", sink);
+    log::g_errLogger = log::g_outLogger;
+#ifdef NDEBUG
+    log::g_outLogger->set_level(spdlog::level::info);
 #else
-  // Use a complete format for release mode.
-  spdlog::set_pattern("[%Y-%m-%d %T.%e] %^[%5l]%$ %v");
+    log::g_outLogger->set_level(spdlog::level::trace);
 #endif
+    //spdlog::set_pattern("(#%t) %v");
+    spdlog::set_pattern("%v");
+  } else {
+    log::g_outLogger = spdlog::stdout_color_mt("wsudo.out");
+    log::g_errLogger = spdlog::stderr_color_mt("wsudo.err");
+
+    log::g_errLogger->set_level(spdlog::level::warn);
+#ifdef NDEBUG
+    log::g_outLogger->set_level(spdlog::level::info);
+    // Use a complete format for release mode.
+    spdlog::set_pattern("[%Y-%m-%d %T.%e] %^[%5l]%$ %v");
+#else
+    log::g_outLogger->set_level(spdlog::level::trace);
+    // Set a more compact, readable log format for debugging.
+    spdlog::set_pattern("\033[90m[%T.%e]\033[m (#%5t) %^[%5l]%$ %v");
+#endif
+  }
+
+  if (!isElevated()) {
+    log::error("This program must be run from an elevated context.");
+    return HRESULT_FROM_WIN32(ERROR_ELEVATION_REQUIRED);
+  }
+
+  if (argc == 2) {
+    if (!wcscmp(argv[1], L"install")) {
+      log::info("Installing wsudo token server...");
+      auto result = installService();
+      if (SUCCEEDED(result)) {
+        log::info("Installation successful.");
+        return 0;
+      } else {
+        log::error("Installation failed: (0x{:X}): {}",
+                   result, lastErrorString(result));
+        return result;
+      }
+    } else if (!wcscmp(argv[1], L"uninstall")) {
+      log::info("Uninstalling wsudo token server...");
+      auto result = uninstallService();
+      if (SUCCEEDED(result)) {
+        log::info("Uninstallation successful.");
+        return 0;
+      } else {
+        log::error("Uninstallation failed: (0x{:X}): {}",
+                   result, lastErrorString(result));
+        return result;
+      }
+    } else {
+      log::error(L"Unknown argument '{}'.", argv[1]);
+      return E_INVALIDARG;
+    }
+  } else if (argc > 2) {
+    log::error("Too many arguments.");
+    return E_INVALIDARG;
+  }
 
   HANDLE hStdin = GetStdHandle(STD_INPUT_HANDLE);
   HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
 
   DWORD stdinMode, stdoutMode;
-  GetConsoleMode(hStdin, &stdinMode);
-  SetConsoleMode(hStdin, stdinMode | ENABLE_PROCESSED_INPUT);
-  GetConsoleMode(hStdout, &stdoutMode);
-  SetConsoleMode(hStdout,
-                 ENABLE_PROCESSED_OUTPUT | ENABLE_WRAP_AT_EOL_OUTPUT |
-                 ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+
+  if (!g_isService) {
+    GetConsoleMode(hStdin, &stdinMode);
+    SetConsoleMode(hStdin, stdinMode | ENABLE_PROCESSED_INPUT);
+    GetConsoleMode(hStdout, &stdoutMode);
+    SetConsoleMode(hStdout,
+                   ENABLE_PROCESSED_OUTPUT | ENABLE_WRAP_AT_EOL_OUTPUT |
+                   ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+  }
 
   // Restore console modes on exit.
   WSUDO_SCOPE_EXIT {
-    SetConsoleMode(hStdin, stdinMode);
-    SetConsoleMode(hStdout, stdoutMode);
+    if (!g_isService) {
+      SetConsoleMode(hStdin, stdinMode);
+      SetConsoleMode(hStdout, stdoutMode);
+    }
   };
 
   log::info("WSudo Token Server: Pid = {}.", GetCurrentProcessId());
 
-  // Clear control handlers and then set ours.
-  if (!SetConsoleCtrlHandler(nullptr, false) ||
-      !SetConsoleCtrlHandler(consoleControlHandler, true))
-  {
-    log::warn("Failed to set Ctrl-C handler; kill process to exit.");
-  } else {
-    log::info("Starting server. Press Ctrl-C to exit.");
+  if (!g_isService) {
+    // Clear control handlers and then set ours.
+    if (!SetConsoleCtrlHandler(nullptr, false) ||
+        !SetConsoleCtrlHandler(consoleControlHandler, true)) {
+      log::warn("Failed to set Ctrl-C handler; kill process to exit.");
+    } else {
+      log::info("Starting server. Press Ctrl-C to exit.");
+    }
   }
 
   Server server{PipeFullPath};

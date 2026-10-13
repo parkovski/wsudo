@@ -12,6 +12,26 @@ int wmain(int argc, wchar_t *argv[]) {
   log::g_errLogger->set_level(spdlog::level::warn);
   spdlog::set_pattern("%^%l:%$ %v");
 
+  HANDLE hStdin = GetStdHandle(STD_INPUT_HANDLE);
+  HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
+
+  DWORD stdinMode, stdoutMode;
+
+  GetConsoleMode(hStdin, &stdinMode);
+  SetConsoleMode(hStdin,
+                 ENABLE_PROCESSED_INPUT | ENABLE_LINE_INPUT |
+                 ENABLE_ECHO_INPUT);
+  GetConsoleMode(hStdout, &stdoutMode);
+  SetConsoleMode(hStdout,
+                 ENABLE_PROCESSED_OUTPUT | ENABLE_WRAP_AT_EOL_OUTPUT |
+                 ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+
+  // Restore console modes on exit.
+  WSUDO_SCOPE_EXIT {
+    SetConsoleMode(hStdin, stdinMode);
+    SetConsoleMode(hStdout, stdoutMode);
+  };
+
   if (argc < 2) {
     log::eprint("Usage: wsudo <program> <args>\n");
     return HRESULT_FROM_WIN32(ERROR_INVALID_PARAMETER);

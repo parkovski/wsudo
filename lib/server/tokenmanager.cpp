@@ -138,7 +138,7 @@ bool TokenManager::applyToken(HANDLE remoteProcess) {
   bool ok;
   do {
     nameSize *= 2;
-    delete name;
+    delete[] name;
     name = new wchar_t[nameSize];
     ok = QueryFullProcessImageName(remoteProcessLocal.get(), 0, name,
                                    &nameSize);
@@ -148,6 +148,6 @@ bool TokenManager::applyToken(HANDLE remoteProcess) {
     name[3] = 0;
   }
   log::info(L"Successfully adjusted remote process token for '{}'.", name);
-  delete name;
+  delete[] name;
   return true;
 }

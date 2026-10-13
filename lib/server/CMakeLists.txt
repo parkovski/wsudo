@@ -1,5 +1,6 @@
 set(SOURCES
   connection.cpp
+  install.cpp
   server.cpp
   session.cpp
   tokenmanager.cpp

@@ -13,6 +13,12 @@
 
 namespace wsudo {
 
+HRESULT installService();
+HRESULT uninstallService();
+
+extern bool g_isService;
+extern class Server *g_server;
+
 class Server {
 public:
   class Connection;

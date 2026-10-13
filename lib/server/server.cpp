@@ -8,6 +8,9 @@
 
 using namespace wsudo;
 
+bool wsudo::g_isService = false;
+Server *wsudo::g_server = nullptr;
+
 HRESULT Server::initSecurity() noexcept {
   SID_IDENTIFIER_AUTHORITY worldAuthority = SECURITY_WORLD_SID_AUTHORITY;
   RETURN_IF_WIN32_BOOL_FALSE(
