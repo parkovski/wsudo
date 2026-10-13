@@ -38,8 +38,8 @@ HRESULT wsudo::installService() {
   DWORD pathSize = MAX_PATH, copied;
   wchar_t *path = new wchar_t[pathSize];
   do {
-    copied = GetModuleFileName(nullptr, path, pathSize - 1);
-    if (copied == pathSize - 1 && GetLastError() == ERROR_INSUFFICIENT_BUFFER)
+    copied = GetModuleFileName(nullptr, path, pathSize);
+    if (copied == pathSize && GetLastError() == ERROR_INSUFFICIENT_BUFFER)
     {
       delete[] path;
       pathSize *= 2;
