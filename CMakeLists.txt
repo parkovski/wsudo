@@ -29,11 +29,12 @@ find_path(wscoro_INCLUDE_DIR wscoro/wscoro.h HINTS ../wscoro/include REQUIRED)
 
 add_definitions(-DUNICODE -D_UNICODE)
 include_directories(${PROJECT_SOURCE_DIR}/include ${wscoro_INCLUDE_DIR})
-link_libraries(spdlog::spdlog fmt::fmt-header-only WIL::WIL)
+link_libraries(spdlog::spdlog fmt::fmt WIL::WIL)
 
 add_subdirectory(lib)
 add_subdirectory(bin)
 
 if(BUILD_TESTING)
+  find_package(Catch2 CONFIG REQUIRED)
   add_subdirectory(test)
 endif()
