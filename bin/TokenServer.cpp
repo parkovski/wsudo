@@ -1,3 +1,4 @@
+#include "wsudo/log.h"
 #include "wsudo/wsudo.h"
 #include "wsudo/server.h"
 
@@ -50,17 +51,17 @@ static BOOL WINAPI consoleControlHandler(DWORD event) {
   return true;
 }
 
-static bool isRunningAsService() {
-  BOOL  bIsAService = false;
+static bool isLocalSystem() {
+  BOOL  bIsMember = false;
   BYTE  sidService[SECURITY_MAX_SID_SIZE] = { 0 };
   DWORD cbSidSize = SECURITY_MAX_SID_SIZE;
 
-  // Check if we are in the service group (S‒1‒5‒6).
-  if (CreateWellKnownSid(WinServiceSid, nullptr, &sidService, &cbSidSize)) {
-    CheckTokenMembership(nullptr, &sidService, &bIsAService);
+  if (CreateWellKnownSid(WinLocalSystemSid, nullptr, &sidService, &cbSidSize))
+  {
+    CheckTokenMembership(nullptr, &sidService, &bIsMember);
   }
 
-  return bIsAService;
+  return bIsMember;
 }
 
 static bool isElevated() {
@@ -78,17 +79,29 @@ static bool isElevated() {
   return false;
 }
 
-SERVICE_STATUS g_serviceStatus;
-SERVICE_STATUS_HANDLE g_serviceStatusHandle;
 
 void WINAPI serviceCtrlHandler(DWORD ctrl) {
-  if (ctrl == SERVICE_STOP) {
+  log::debug("Service received message {}.", ctrl);
+  switch (ctrl) {
+  case SERVICE_CONTROL_INTERROGATE:
+    break;
+
+  case SERVICE_CONTROL_STOP:
     g_serviceStatus.dwCurrentState = SERVICE_STOP_PENDING;
     g_serviceStatus.dwControlsAccepted = 0;
+    g_serviceStatus.dwWaitHint = 500;
+    g_serviceStatus.dwCheckPoint = 1;
     SetServiceStatus(g_serviceStatusHandle, &g_serviceStatus);
+    g_serviceStatus.dwWaitHint = 0;
 
     g_server->quit();
+    return;
+
+  default:
+    break;
   }
+
+  SetServiceStatus(g_serviceStatusHandle, &g_serviceStatus);
 }
 
 VOID WINAPI serviceMain(DWORD argc, LPWSTR *argv) {
@@ -97,43 +110,41 @@ VOID WINAPI serviceMain(DWORD argc, LPWSTR *argv) {
     serviceCtrlHandler
   );
 
-  if (!g_serviceStatusHandle) {
-    log::error("RegisterServiceCtrlHandler failed: (0x{:X}): {}",
-               GetLastError(), lastErrorString());
-    return;
-  }
-
   // These SERVICE_STATUS members remain as set here
-
   g_serviceStatus.dwServiceType = SERVICE_WIN32_OWN_PROCESS;
   g_serviceStatus.dwServiceSpecificExitCode = 0;
 
+  if (!g_serviceStatusHandle) {
+    auto err = GetLastError();
+    log::error("RegisterServiceCtrlHandler failed: (0x{:X}): {}",
+               err, lastErrorString(err));
+    g_serviceStatus.dwWin32ExitCode = (DWORD)HRESULT_FROM_WIN32(err);
+    return;
+  }
+
   // Report initial status to the SCM
-  g_serviceStatus.dwCurrentState = SERVICE_RUNNING; // SERVICE_START_PENDING
-  g_serviceStatus.dwWin32ExitCode = 0;
-  g_serviceStatus.dwWaitHint = 0; // 3000
+  g_serviceStatus.dwCurrentState = SERVICE_START_PENDING;
+  g_serviceStatus.dwWin32ExitCode = NO_ERROR;
+  g_serviceStatus.dwWaitHint = 500;
   g_serviceStatus.dwControlsAccepted = 0;
-  g_serviceStatus.dwCheckPoint = 0;
+  g_serviceStatus.dwCheckPoint = 1;
   SetServiceStatus(g_serviceStatusHandle, &g_serviceStatus);
+  g_serviceStatus.dwWaitHint = 0;
 
   Server server{PipeFullPath};
   g_server = &server;
 
-  // TODO: Put this on a server thread.
-  //g_serviceStatus.dwCurrentState = SERVICE_RUNNING;
-  //g_serviceStatus.dwControlsAccepted = SERVICE_ACCEPT_STOP;
-  //++g_serviceStatus.dwCheckPoint;
-  //SetServiceStatus(g_serviceStatusHandle, &g_serviceStatus);
-
-  int exitCode = server(2);
+  int exitCode = server(2, 2);
 
   g_serviceStatus.dwWin32ExitCode = (DWORD)exitCode;
   g_serviceStatus.dwCurrentState = SERVICE_STOPPED;
+  g_serviceStatus.dwControlsAccepted = 0;
+  g_serviceStatus.dwCheckPoint = 0;
   SetServiceStatus(g_serviceStatusHandle, &g_serviceStatus);
 }
 
 int wmain(int argc, wchar_t *argv[]) {
-  g_isService = isRunningAsService();
+  g_isService = isLocalSystem();
   if (g_isService) {
     auto sink = std::make_shared<spdlog::sinks::win_eventlog_sink_mt>("wsudo");
     log::g_outLogger = std::make_shared<spdlog::logger>("wsudo", sink);
@@ -141,7 +152,7 @@ int wmain(int argc, wchar_t *argv[]) {
 #ifdef NDEBUG
     log::g_outLogger->set_level(spdlog::level::info);
 #else
-    log::g_outLogger->set_level(spdlog::level::trace);
+    log::g_outLogger->set_level(spdlog::level::debug);
 #endif
     //spdlog::set_pattern("(#%t) %v");
     spdlog::set_pattern("%v");
@@ -160,6 +171,11 @@ int wmain(int argc, wchar_t *argv[]) {
     spdlog::set_pattern("\033[90m[%T.%e]\033[m (#%5t) %^[%5l]%$ %v");
 #endif
   }
+
+  WSUDO_SCOPE_EXIT {
+    log::g_outLogger = nullptr;
+    log::g_errLogger = nullptr;
+  };
 
   if (!isElevated()) {
     log::error("This program must be run from an elevated context.");

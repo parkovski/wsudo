@@ -51,14 +51,14 @@ public:
 
   /// Run `f` asynchronously on an IO thread.
   template<class F>
-  wscoro::fire_and_forget postCallback(F f) {
+  wscoro::fire_and_forget postCallback(F &&f) {
     co_await enterIOThread();
     f();
   }
 
   /// Run `c` asynchronously on an IO thread.
   template<class C>
-  wscoro::fire_and_forget postCoroutine(C c) {
+  wscoro::fire_and_forget postCoroutine(C &&c) {
     co_await enterIOThread();
     co_await c;
   }

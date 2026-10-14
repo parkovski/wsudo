@@ -19,6 +19,9 @@ HRESULT uninstallService();
 extern bool g_isService;
 extern class Server *g_server;
 
+extern SERVICE_STATUS g_serviceStatus;
+extern SERVICE_STATUS_HANDLE g_serviceStatusHandle;
+
 class Server {
 public:
   class Connection;

@@ -11,6 +11,9 @@ using namespace wsudo;
 bool wsudo::g_isService = false;
 Server *wsudo::g_server = nullptr;
 
+SERVICE_STATUS wsudo::g_serviceStatus = {};
+SERVICE_STATUS_HANDLE wsudo::g_serviceStatusHandle = nullptr;
+
 HRESULT Server::initSecurity() noexcept {
   SID_IDENTIFIER_AUTHORITY worldAuthority = SECURITY_WORLD_SID_AUTHORITY;
   RETURN_IF_WIN32_BOOL_FALSE(
@@ -89,6 +92,13 @@ int Server::operator()(int nUserThreads, int nSystemThreads) {
   CorIO corio(nSystemThreads);
   _quitHandle = &corio;
   corio.run(nUserThreads);
+
+  if (g_isService) {
+    g_serviceStatus.dwCurrentState = SERVICE_RUNNING;
+    g_serviceStatus.dwControlsAccepted = SERVICE_ACCEPT_STOP;
+    g_serviceStatus.dwCheckPoint = 0;
+    SetServiceStatus(g_serviceStatusHandle, &g_serviceStatus);
+  }
 
   auto c1 = corio.make<Connection>(initPipe(true), *this);
   auto c2 = corio.make<Connection>(initPipe(), *this);
