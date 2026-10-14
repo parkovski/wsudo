@@ -2,6 +2,7 @@
 #include "wsudo/wsudo.h"
 #include "wsudo/server.h"
 
+#include <spdlog/spdlog.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/sinks/win_eventlog_sink.h>
 
@@ -148,14 +149,14 @@ int wmain(int argc, wchar_t *argv[]) {
   if (g_isService) {
     auto sink = std::make_shared<spdlog::sinks::win_eventlog_sink_mt>("wsudo");
     log::g_outLogger = std::make_shared<spdlog::logger>("wsudo", sink);
+    spdlog::register_logger(log::g_outLogger);
     log::g_errLogger = log::g_outLogger;
 #ifdef NDEBUG
     log::g_outLogger->set_level(spdlog::level::info);
 #else
     log::g_outLogger->set_level(spdlog::level::debug);
 #endif
-    //spdlog::set_pattern("(#%t) %v");
-    spdlog::set_pattern("%v");
+    spdlog::set_pattern("(#%t) %v");
   } else {
     log::g_outLogger = spdlog::stdout_color_mt("wsudo.out");
     log::g_errLogger = spdlog::stderr_color_mt("wsudo.err");
@@ -205,6 +206,14 @@ int wmain(int argc, wchar_t *argv[]) {
                    result, lastErrorString(result));
         return result;
       }
+    } else if (!wcscmp(argv[1], L"clear-event-log")) {
+      auto result = clearEventLog();
+      if (SUCCEEDED(result)) {
+        log::info("Event log cleared.");
+        return 0;
+      }
+      log::error("Couldn't clear event log.");
+      return result;
     } else {
       log::error(L"Unknown argument '{}'.", argv[1]);
       return E_INVALIDARG;

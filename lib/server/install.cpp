@@ -111,3 +111,15 @@ HRESULT wsudo::uninstallService() {
 
   return S_OK;
 }
+
+HRESULT wsudo::clearEventLog() {
+  HANDLE eventLog = OpenEventLog(nullptr, L"wsudo");
+  if (eventLog == nullptr) {
+    return HRESULT_FROM_WIN32(GetLastError());
+  }
+  WSUDO_SCOPE_EXIT { CloseEventLog(eventLog); };
+  if (!ClearEventLog(eventLog, nullptr)) {
+    return HRESULT_FROM_WIN32(GetLastError());
+  }
+  return S_OK;
+}
