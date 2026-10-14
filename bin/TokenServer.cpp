@@ -83,12 +83,12 @@ static bool isElevated() {
 
 
 void WINAPI serviceCtrlHandler(DWORD ctrl) {
-  log::debug("Service received message {}.", ctrl);
   switch (ctrl) {
   case SERVICE_CONTROL_INTERROGATE:
     break;
 
   case SERVICE_CONTROL_STOP:
+    log::info("Service received stop message; quitting.");
     g_serviceStatus.dwCurrentState = SERVICE_STOP_PENDING;
     g_serviceStatus.dwControlsAccepted = 0;
     g_serviceStatus.dwWaitHint = 500;
