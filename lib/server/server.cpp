@@ -101,9 +101,11 @@ int Server::operator()(int nUserThreads, int nSystemThreads) {
   }
 
   auto c1 = corio.make<Connection>(initPipe(true), *this);
-  auto c2 = corio.make<Connection>(initPipe(), *this);
   c1.run();
-  c2.run();
+  for (auto i = 1; i < nUserThreads; ++i) {
+    auto c = corio.make<Connection>(initPipe(), *this);
+    c.run();
+  }
 
   return corio.wait();
 }
