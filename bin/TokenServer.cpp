@@ -282,7 +282,7 @@ int wmain(int argc, wchar_t *argv[]) {
 
     Server server{PipeFullPath};
     g_server = &server;
-    return server(2);
+    return server(2, 2);
   } else {
     wchar_t serviceName[] = L"wsudo";
     SERVICE_TABLE_ENTRY dispatchTable[] = {
