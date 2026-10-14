@@ -2,6 +2,7 @@
 #include "wsudo/wsudo.h"
 #include "wsudo/server.h"
 
+#include <spdlog/common.h>
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/sinks/win_eventlog_sink.h>
@@ -183,40 +184,63 @@ int wmain(int argc, wchar_t *argv[]) {
     return HRESULT_FROM_WIN32(ERROR_ELEVATION_REQUIRED);
   }
 
-  if (argc == 2) {
-    if (!wcscmp(argv[1], L"install")) {
-      log::info("Installing wsudo token server...");
-      auto result = installService();
-      if (SUCCEEDED(result)) {
-        log::info("Installation successful.");
-        return 0;
-      } else {
-        log::error("Installation failed: (0x{:X}): {}",
-                   result, lastErrorString(result));
+  if (argc > 1) {
+    for (int i = 1; i < argc; ++i) {
+      if (!wcscmp(argv[i], L"install")) {
+        log::info("Installing wsudo token server...");
+        auto result = installService();
+        if (SUCCEEDED(result)) {
+          log::info("Installation successful.");
+          return 0;
+        } else {
+          log::error("Installation failed: (0x{:X}): {}",
+                     result, lastErrorString(result));
+          return result;
+        }
+      } else if (!wcscmp(argv[i], L"uninstall")) {
+        log::info("Uninstalling wsudo token server...");
+        auto result = uninstallService();
+        if (SUCCEEDED(result)) {
+          log::info("Uninstallation successful.");
+          return 0;
+        } else {
+          log::error("Uninstallation failed: (0x{:X}): {}",
+                     result, lastErrorString(result));
+          return result;
+        }
+      } else if (!wcscmp(argv[i], L"clear-event-log")) {
+        auto result = clearEventLog();
+        if (SUCCEEDED(result)) {
+          log::info("Event log cleared.");
+          return 0;
+        }
+        log::error("Couldn't clear event log.");
         return result;
-      }
-    } else if (!wcscmp(argv[1], L"uninstall")) {
-      log::info("Uninstalling wsudo token server...");
-      auto result = uninstallService();
-      if (SUCCEEDED(result)) {
-        log::info("Uninstallation successful.");
-        return 0;
+      } else if (!wcsncmp(argv[i], L"log-level=", 10)) {
+        auto level = argv[i] + 10;
+        if (!wcscmp(level, L"trace")) {
+          log::g_outLogger->set_level(spdlog::level::trace);
+        } else if (!wcscmp(level, L"debug")) {
+          log::g_outLogger->set_level(spdlog::level::debug);
+        } else if (!wcscmp(level, L"info")) {
+          log::g_outLogger->set_level(spdlog::level::info);
+        } else if (!wcscmp(level, L"warn")) {
+          log::g_outLogger->set_level(spdlog::level::off);
+          log::g_errLogger->set_level(spdlog::level::warn);
+        } else if (!wcscmp(level, L"error")) {
+          log::g_outLogger->set_level(spdlog::level::off);
+          log::g_errLogger->set_level(spdlog::level::err);
+        } else if (!wcscmp(level, L"critical")) {
+          log::g_outLogger->set_level(spdlog::level::off);
+          log::g_errLogger->set_level(spdlog::level::critical);
+        } else if (!wcscmp(level, L"off")) {
+          log::g_outLogger->set_level(spdlog::level::off);
+          log::g_errLogger->set_level(spdlog::level::off);
+        }
       } else {
-        log::error("Uninstallation failed: (0x{:X}): {}",
-                   result, lastErrorString(result));
-        return result;
+        log::error(L"Unknown argument '{}'.", argv[i]);
+        return E_INVALIDARG;
       }
-    } else if (!wcscmp(argv[1], L"clear-event-log")) {
-      auto result = clearEventLog();
-      if (SUCCEEDED(result)) {
-        log::info("Event log cleared.");
-        return 0;
-      }
-      log::error("Couldn't clear event log.");
-      return result;
-    } else {
-      log::error(L"Unknown argument '{}'.", argv[1]);
-      return E_INVALIDARG;
     }
   } else if (argc > 2) {
     log::error("Too many arguments.");
