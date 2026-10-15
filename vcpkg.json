@@ -6,7 +6,9 @@
     "fmt",
     {
       "name": "spdlog",
-      "features": ["wchar"]
+      "features": [
+        "wchar"
+      ]
     },
     "wil"
   ],
@@ -22,5 +24,6 @@
     }
   },
   "$get-this-yourself": "https://github.com/parkovski/wscoro",
-  "$required-for-tests": "catch2 v3"
+  "$required-for-tests": "catch2 v3",
+  "builtin-baseline": "357b1a6f8343064ca982a20771e420fcecfe7efc"
 }
