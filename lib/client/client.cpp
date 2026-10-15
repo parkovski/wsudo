@@ -195,19 +195,23 @@ bool Client::readConsolePassword(std::string &password) const {
 static wchar_t *getMyDirectory() {
   DWORD pathSize = MAX_PATH, copied;
   wchar_t *path = new wchar_t[pathSize];
-  do {
-    copied = GetModuleFileName(nullptr, path, pathSize);
-    if (copied == pathSize && GetLastError() == ERROR_INSUFFICIENT_BUFFER)
-    {
-      delete[] path;
-      pathSize *= 2;
-      path = new wchar_t[pathSize];
-    } else if (copied == 0) {
+  while (true) {
+    copied = pathSize;
+    // Note: GetModuleFileName does not resolve symlinks.
+    // QueryFullProcessImageName does.
+    if (!QueryFullProcessImageName(GetCurrentProcess(), 0, path, &copied)) {
+      if (GetLastError() == ERROR_INSUFFICIENT_BUFFER) {
+        delete[] path;
+        pathSize *= 2;
+        path = new wchar_t[pathSize];
+        continue;
+      }
       THROW_LAST_ERROR();
     } else {
       break;
     }
-  } while (true);
+  }
+
   for (int i = (int)copied - 2; i > 0; --i) {
     if (path[i] == L'\\' || path[i] == L'/') {
       path[i + 1] = L'\0';
