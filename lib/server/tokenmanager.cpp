@@ -6,8 +6,9 @@
 using namespace wsudo;
 
 bool TokenManager::ScopedSecurityPrivilege::setPrivilege(
-  HANDLE token, const wchar_t *privilege, bool enabled
+  const wchar_t *privilege, bool enabled
 ) noexcept {
+  HANDLE token = tm->_serverToken.get();
   TOKEN_PRIVILEGES tp;
   tp.PrivilegeCount = 1;
   tp.Privileges[0].Attributes = enabled ? SE_PRIVILEGE_ENABLED : 0;
@@ -29,7 +30,8 @@ bool TokenManager::ScopedSecurityPrivilege::setPrivilegeState(bool enabled)
   noexcept
 {
   bool success =
-    setPrivilege(tm->_serverToken.get(), SE_SECURITY_NAME, enabled);
+    setPrivilege(SE_SECURITY_NAME, enabled)
+    && setPrivilege(SE_ASSIGNPRIMARYTOKEN_NAME, enabled);
   ok = enabled;
   return success;
 }
@@ -55,6 +57,28 @@ HANDLE TokenManager::getServerToken() noexcept {
     return INVALID_HANDLE_VALUE;
   }
   return token;
+}
+
+HANDLE TokenManager::getClientToken() noexcept {
+  HANDLE token;
+  TOKEN_LINKED_TOKEN linkedToken;
+  DWORD tokenInfoLength;
+  const DWORD access = TOKEN_DUPLICATE | TOKEN_READ | TOKEN_ADJUST_PRIVILEGES;
+  if (!OpenProcessToken(_clientProcess.get(), access, &token)) {
+    log::error("Couldn't open client process token: (0x{:X}): {}",
+               GetLastError(), lastErrorString());
+    return INVALID_HANDLE_VALUE;
+  }
+  if (!GetTokenInformation(token, TokenLinkedToken, &linkedToken,
+                           sizeof(TOKEN_LINKED_TOKEN), &tokenInfoLength)) {
+    log::warn(
+      "Couldn't get linked token; using restricted token: (0x{:X}): {}",
+      GetLastError(), lastErrorString()
+    );
+    return token;
+  }
+  CloseHandle(token);
+  return linkedToken.LinkedToken;
 }
 
 bool TokenManager::createLaunchToken(HANDLE baseToken) {
@@ -102,6 +126,13 @@ TokenManager::TokenManager(DWORD clientProcessId)
 
 bool TokenManager::createServerLaunchToken() {
   return createLaunchToken(_serverToken.get());
+}
+
+bool TokenManager::createClientLaunchToken() {
+  auto clientToken = getClientToken();
+  bool result = createLaunchToken(clientToken);
+  CloseHandle(clientToken);
+  return result;
 }
 
 bool TokenManager::applyToken(HANDLE remoteProcess) {

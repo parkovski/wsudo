@@ -26,8 +26,7 @@ class TokenManager {
     TokenManager *tm;
     bool ok;
 
-    static bool setPrivilege(HANDLE token, const wchar_t *privilege,
-                             bool enabled) noexcept;
+    bool setPrivilege(const wchar_t *privilege, bool enabled) noexcept;
     bool setPrivilegeState(bool enabled) noexcept;
 
   public:
@@ -56,6 +55,7 @@ class TokenManager {
   static HANDLE getClientProcess(DWORD pid) noexcept;
 
   HANDLE getServerToken() noexcept;
+  HANDLE getClientToken() noexcept;
 
   bool createLaunchToken(HANDLE baseToken);
 
@@ -65,6 +65,8 @@ public:
 
   // Duplicates the server's token.
   bool createServerLaunchToken();
+
+  bool createClientLaunchToken();
 
   // Set the remote process's token to the currently stored token.
   bool applyToken(HANDLE remoteProcess);

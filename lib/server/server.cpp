@@ -144,7 +144,7 @@ wscoro::task<> Server::dispatch(Connection &conn) {
       auto clientPid = conn.clientProcessId();
       auto handle = bless.hRemoteProcess;
       TokenManager tm{clientPid};
-      if (tm.createServerLaunchToken() && tm.applyToken(handle)) {
+      if (tm.createClientLaunchToken() && tm.applyToken(handle)) {
         co_await conn.send(msg::Success{});
       } else {
         co_await conn.send(msg::Failure{});
