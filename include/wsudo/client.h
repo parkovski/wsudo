@@ -23,6 +23,7 @@ public:
                         int maxAttempts = MaxConnectAttempts);
 
     void connect(int maxAttempts = MaxConnectAttempts);
+    void disconnect();
 
     const std::string &buffer() const noexcept {
       return _buffer;

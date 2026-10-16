@@ -39,6 +39,10 @@ void Client::Connection::connect(int maxAttempts) {
   THROW_WIN32(ERROR_PIPE_BUSY);
 }
 
+void Client::Connection::disconnect() {
+  CloseHandle(_pipe.release());
+}
+
 void Client::Connection::sendBuffer() {
   DWORD bytes;
   DWORD totalWritten = 0;

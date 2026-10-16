@@ -102,7 +102,7 @@ void CorIO::run(int nUserThreads) {
 int CorIO::wait() {
   if (!_threads.size()) {
     log::trace("CorIO::wait() called but there are no active threads.");
-    return 0x00000122; //STATUS_NOTHING_TO_TERMINATE
+    return ERROR_NOTHING_TO_TERMINATE;
   }
 
   log::debug("CorIO wait for {} threads.", _threads.size());

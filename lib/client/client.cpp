@@ -410,6 +410,8 @@ HRESULT Client::operator()() {
     return ERROR_ACCESS_DENIED;
   }
 
+  _conn.disconnect();
+
   log::debug("Resuming process {}.", pi.hProcess);
   return (HRESULT)resume(pi, true);
 }
