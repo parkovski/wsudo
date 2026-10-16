@@ -1,5 +1,8 @@
 #include "wsudo/wsudo.h"
 #include "wsudo/server.h"
+#include <Lm.h>
+
+#pragma comment(lib, "Netapi32.lib")
 
 HRESULT wsudo::installService() {
   HKEY hKey;
@@ -10,6 +13,7 @@ HRESULT wsudo::installService() {
     REG_OPTION_NON_VOLATILE, KEY_WRITE, nullptr, &hKey, nullptr
   );
   if (status != ERROR_SUCCESS) {
+    log::error("Could not open registry.");
     return HRESULT_FROM_WIN32(status);
   }
   WSUDO_SCOPE_EXIT { RegCloseKey(hKey); };
@@ -21,6 +25,7 @@ HRESULT wsudo::installService() {
     sizeof(DWORD)
   );
   if (status != ERROR_SUCCESS) {
+    log::error("Could not write to registry.");
     return HRESULT_FROM_WIN32(status);
   }
 
@@ -32,6 +37,7 @@ HRESULT wsudo::installService() {
     (wcslen(EventMessageFile) + 1) * sizeof(wchar_t)
   );
   if (status != ERROR_SUCCESS) {
+    log::error("Could not write to registry.");
     return HRESULT_FROM_WIN32(status);
   }
 
@@ -55,6 +61,7 @@ HRESULT wsudo::installService() {
 
   auto scManager = OpenSCManagerW(nullptr, nullptr, SC_MANAGER_ALL_ACCESS);
   if (!scManager) {
+    log::error("Could not open service manager.");
     return HRESULT_FROM_WIN32(GetLastError());
   }
   WSUDO_SCOPE_EXIT { CloseServiceHandle(scManager); };
@@ -65,49 +72,51 @@ HRESULT wsudo::installService() {
     escapedPath.c_str(), nullptr, nullptr, nullptr, nullptr, nullptr
   );
   if (!service) {
+    log::error("Could not create service.");
     return HRESULT_FROM_WIN32(GetLastError());
   }
   WSUDO_SCOPE_EXIT { CloseServiceHandle(service); };
+  log::info("Created service wsudo.");
+
+  LOCALGROUP_INFO_1 lgrpInfo;
+  lgrpInfo.lgrpi1_name = const_cast<wchar_t *>(L"wsudoers");
+  lgrpInfo.lgrpi1_comment = const_cast<wchar_t *>(
+    L"Users allowed to use wsudo to elevate"
+  );
+  auto grpResult = NetLocalGroupAdd(
+    nullptr, 1, reinterpret_cast<BYTE *>(&lgrpInfo), nullptr
+  );
+  if (grpResult != NERR_Success) {
+    log::error("Could not create local group wsudoers.");
+    return HRESULT_FROM_WIN32(grpResult);
+  }
+  log::info("Created group wsudoers.");
 
   return S_OK;
 }
 
 HRESULT wsudo::uninstallService() {
-  LSTATUS status;
-  status = RegDeleteTreeW(
+  // On error we want to just keep going to do as much of the uninstall as
+  // possible.
+
+  RegDeleteTreeW(
     HKEY_LOCAL_MACHINE,
     L"SYSTEM\\CurrentControlSet\\Services\\EventLog\\wsudo"
   );
-  if (status != ERROR_SUCCESS) {
-    return HRESULT_FROM_WIN32(status);
-  }
 
   auto scManager = OpenSCManagerW(nullptr, nullptr, SC_MANAGER_ALL_ACCESS);
-  if (!scManager) {
-    return HRESULT_FROM_WIN32(GetLastError());
-  }
-  WSUDO_SCOPE_EXIT { CloseServiceHandle(scManager); };
-
-  auto service = OpenServiceW(scManager, L"wsudo", SERVICE_STOP | DELETE);
-  if (!service) {
-    return HRESULT_FROM_WIN32(GetLastError());
-  }
-  WSUDO_SCOPE_EXIT { CloseServiceHandle(service); };
-
-  SERVICE_STATUS serviceStatus{};
-  if (!ControlService(service, SERVICE_CONTROL_STOP, &serviceStatus)) {
-    auto err = GetLastError();
-    if (err != ERROR_SERVICE_NOT_ACTIVE) {
-      return HRESULT_FROM_WIN32(err);
+  if (scManager) {
+    WSUDO_SCOPE_EXIT { CloseServiceHandle(scManager); };
+    auto service = OpenServiceW(scManager, L"wsudo", SERVICE_STOP | DELETE);
+    if (service) {
+      WSUDO_SCOPE_EXIT { CloseServiceHandle(service); };
+      SERVICE_STATUS serviceStatus{};
+      ControlService(service, SERVICE_CONTROL_STOP, &serviceStatus);
+      DeleteService(service);
     }
   }
 
-  if (!DeleteService(service)) {
-    auto err = GetLastError();
-    if (err != ERROR_SERVICE_MARKED_FOR_DELETE) {
-      return HRESULT_FROM_WIN32(err);
-    }
-  }
+  NetLocalGroupDel(nullptr, L"wsudoers");
 
   return S_OK;
 }
@@ -115,11 +124,17 @@ HRESULT wsudo::uninstallService() {
 HRESULT wsudo::clearEventLog() {
   HANDLE eventLog = OpenEventLog(nullptr, L"wsudo");
   if (eventLog == nullptr) {
+    log::error("Could not open event log.");
     return HRESULT_FROM_WIN32(GetLastError());
   }
   WSUDO_SCOPE_EXIT { CloseEventLog(eventLog); };
+
   if (!ClearEventLog(eventLog, nullptr)) {
+    log::error("Could not clear event log.");
     return HRESULT_FROM_WIN32(GetLastError());
   }
+
+  log::info("Event log cleared.");
+
   return S_OK;
 }
