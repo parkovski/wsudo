@@ -1,12 +1,9 @@
-#include "wsudo/message.h"
 #include "wsudo/wsudo.h"
-#include <fileapi.h>
-#include <handleapi.h>
+#include "wsudo/client.h"
+#include "wsudo/message.h"
+#include <Windows.h>
 #include <variant>
 #include <wil/result_macros.h>
-#include <winbase.h>
-#include <winerror.h>
-#include "wsudo/client.h"
 
 #define SECURITY_WIN32
 #include <Security.h>
@@ -192,56 +189,8 @@ bool Client::readConsolePassword(std::string &password) const {
   return true;
 }
 
-static wchar_t *getMyDirectory() {
-  DWORD pathSize = MAX_PATH, copied;
-  wchar_t *path = new wchar_t[pathSize];
-  while (true) {
-    copied = pathSize;
-    // Note: GetModuleFileName does not resolve symlinks.
-    // QueryFullProcessImageName does.
-    if (!QueryFullProcessImageName(GetCurrentProcess(), 0, path, &copied)) {
-      if (GetLastError() == ERROR_INSUFFICIENT_BUFFER) {
-        delete[] path;
-        pathSize *= 2;
-        path = new wchar_t[pathSize];
-        continue;
-      }
-      THROW_LAST_ERROR();
-    } else {
-      break;
-    }
-  }
-
-  for (int i = (int)copied - 2; i > 0; --i) {
-    if (path[i] == L'\\' || path[i] == L'/') {
-      path[i + 1] = L'\0';
-      break;
-    }
-  }
-
-  return path;
-}
-
-std::wstring Client::createCommandLine() const {
-  auto *myDir = getMyDirectory();
-  std::wstring cl{myDir};
-  delete[] myDir;
-  cl.append(L"wsudo-shim.exe");
-  cl = escapeCommandLineArg(cl);
-  cl.push_back(L' ');
-  cl.append(escapeCommandLineArg(_program));
-  std::wstring arg;
-  for (int i = 0; i < _argc1; ++i) {
-    arg = escapeCommandLineArg(_argv1[i]);
-    cl.push_back(L' ');
-    cl.append(arg);
-  }
-  log::debug(L"Created command line: {}", cl);
-  return cl;
-}
-
 PROCESS_INFORMATION
-Client::createSuspendedProcess() const {
+Client::createSuspendedProcess(std::wstring &commandLine) {
   STARTUPINFOW si{};
   si.cb = sizeof(STARTUPINFOW);
   si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
@@ -249,7 +198,6 @@ Client::createSuspendedProcess() const {
   si.hStdError = GetStdHandle(STD_ERROR_HANDLE);
   si.dwFlags = STARTF_USESTDHANDLES;
   PROCESS_INFORMATION pi{};
-  std::wstring commandLine{createCommandLine()};
   // The system is allowed to modify this string, so we can't use c_str as it
   // returns a const pointer.
   commandLine.push_back(L'\0');
@@ -356,11 +304,9 @@ int Client::resume(PROCESS_INFORMATION &pi, bool wait) {
 Client::Client(const std::wstring &pipeName, int argc,
                const wchar_t *const *argv)
   : _conn{pipeName}
-  , _program{argv[0]}
-  , _argc1{argc - 1}
-  , _argv1{argv + 1}
 {
   lookupUsername();
+
   try {
     _key = readPrivateFile(UserSessionKeyFileName);
   } catch (wil::ResultException &e) {
@@ -376,8 +322,8 @@ Client::Client(const std::wstring &pipeName, int argc,
   }
 }
 
-HRESULT Client::operator()() {
-  if (!resolveProgramPath(_program)) {
+int Client::operator()(std::wstring &commandLine) {
+  if (commandLine.empty()) {
     return ERROR_FILE_NOT_FOUND;
   }
 
@@ -394,7 +340,7 @@ HRESULT Client::operator()() {
 
   PROCESS_INFORMATION pi{};
   try {
-    pi = createSuspendedProcess();
+    pi = createSuspendedProcess(commandLine);
   } catch (wil::ResultException &) {
     // TODO: this has a pretty accurate description but figure out better error
     // handling here.
@@ -413,5 +359,5 @@ HRESULT Client::operator()() {
   _conn.disconnect();
 
   log::debug("Resuming process {}.", pi.hProcess);
-  return (HRESULT)resume(pi, true);
+  return resume(pi, true);
 }

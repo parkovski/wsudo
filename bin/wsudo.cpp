@@ -5,15 +5,38 @@
 
 using namespace wsudo;
 
+static void showHelp() {
+  log::print("Usage: wsudo [options] <program> <args...>\n\n");
+
+  log::print("Options:\n");
+  log::print("  -E, --preserve-env          preserve environment when"
+             " running command\n");
+  log::print("  -h, --help                  display help and exit\n");
+  log::print("  --no-shim                   don't use wsudo-shim.exe\n");
+  log::print("  --no-service                don't try to start the wsudo"
+             " service\n");
+  log::print("  --system                    run as NT AUTHORITY\\System\n");
+}
+
 int wmain(int argc, wchar_t *argv[]) {
   log::g_outLogger = spdlog::stdout_color_mt("wsudo.out");
+#ifdef NDEBUG
+  log::g_outLogger->set_level(spdlog::level::info);
+#else
   log::g_outLogger->set_level(spdlog::level::trace);
+#endif
   log::g_errLogger = spdlog::stderr_color_mt("wsudo.err");
   log::g_errLogger->set_level(spdlog::level::warn);
-  spdlog::set_pattern("%^%l:%$ %v");
 
   HANDLE hStdin = GetStdHandle(STD_INPUT_HANDLE);
   HANDLE hStdout = GetStdHandle(STD_OUTPUT_HANDLE);
+
+  if (GetFileType(hStdout) == FILE_TYPE_CHAR
+      && GetFileType(GetStdHandle(STD_ERROR_HANDLE)) == FILE_TYPE_CHAR) {
+    spdlog::set_pattern("%^%l:%$ %v");
+  } else {
+    spdlog::set_pattern("%l: %v");
+  }
 
   DWORD stdinMode, stdoutMode;
 
@@ -33,8 +56,17 @@ int wmain(int argc, wchar_t *argv[]) {
   };
 
   if (argc < 2) {
-    log::eprint("Usage: wsudo <program> <args>\n");
+    showHelp();
     return HRESULT_FROM_WIN32(ERROR_INVALID_PARAMETER);
+  }
+
+  Client::Options opts;
+  if (!opts.parse(argc - 1, argv + 1)) {
+    showHelp();
+    return HRESULT_FROM_WIN32(ERROR_INVALID_PARAMETER);
+  } else if (opts.showHelp) {
+    showHelp();
+    return 0;
   }
 
   char cdata alignas(Client)[sizeof(Client)];
@@ -43,13 +75,14 @@ int wmain(int argc, wchar_t *argv[]) {
   try {
     new (cdata) Client(PipeFullPath, argc - 1, argv + 1);
   } catch (wil::ResultException &e) {
-    if (e.GetErrorCode() == HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND)) {
+    auto err = e.GetErrorCode();
+    if (err == HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND)) {
       log::critical("Pipe connection failed. Is the server running?");
     }
-    return (int)e.GetErrorCode();
+    return (int)err;
   }
   WSUDO_SCOPE_EXIT { client.~Client(); };
-
   log::debug("Client initialized");
-  return (int)client();
+
+  return client(opts.commandLine);
 }

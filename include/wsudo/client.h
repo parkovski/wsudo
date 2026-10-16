@@ -48,16 +48,24 @@ public:
     }
   };
 
+  struct Options {
+    bool showHelp;
+    bool startService;
+    bool keepEnvironment;
+    bool useShim;
+    bool runAsSystem;
+    std::wstring commandLine;
+
+    Options() noexcept;
+
+    bool parse(int argc, const wchar_t *const *argv) noexcept;
+  };
+
 private:
   Connection _conn;
-  std::wstring _program;
-  int _argc1;
-  const wchar_t *const *_argv1;
   std::string _domain;
   std::string _username;
   std::string _key;
-
-  friend struct ::ClientTest;
 
   // Fills _username and, if applicable, _domain.
   void lookupUsername();
@@ -75,9 +83,7 @@ private:
   // reading was interrupted (e.g. by Ctrl-C).
   bool readConsolePassword(std::string &password) const;
 
-  std::wstring createCommandLine() const;
-
-  PROCESS_INFORMATION createSuspendedProcess() const;
+  PROCESS_INFORMATION createSuspendedProcess(std::wstring &commandLine);
 
   bool userHasActiveSession();
 
@@ -91,7 +97,7 @@ public:
   explicit Client(const std::wstring &pipeName, int argc,
                   const wchar_t *const *argv);
 
-  HRESULT operator()();
+  int operator()(std::wstring &commandLine);
 };
 
 } // namespace wsudo

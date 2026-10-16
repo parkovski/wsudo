@@ -5,28 +5,6 @@
 
 #define esc(arg) wsudo::escapeCommandLineArg(arg)
 
-struct ClientTest {
-  static void testCreateCommandLine() {
-    using namespace std::string_view_literals;
-    const wchar_t *const argv[] = {
-      L"C:\\Program Files\\My Program\\program.exe",
-      L"-x",
-      L"foo bar",
-      L"\"\\test\"",
-      L"\\\"foo bar\"\\",
-    };
-    const int argc = WSUDO_ARRAYSIZE(argv);
-    HANDLE pipe = CreateNamedPipeW(L"\\\\.\\pipe\\wsudo_test_pipe",
-                                   PIPE_ACCESS_DUPLEX, PIPE_TYPE_BYTE,
-                                   2, 128, 128, 0, nullptr);
-    REQUIRE(pipe != INVALID_HANDLE_VALUE);
-    WSUDO_SCOPE_EXIT { CloseHandle(pipe); };
-    auto client = wsudo::Client{L"\\\\.\\pipe\\wsudo_test_pipe", argc, argv};
-    auto cl = client.createCommandLine();
-    REQUIRE(cl == L"\"C:\\Program Files\\My Program\\program.exe\" -x \"foo bar\" \"\\\"\\\\test\\\"\" \"\\\\\\\"foo bar\\\"\\\\\""sv);
-  }
-};
-
 TEST_CASE("Command line parsing", "[commandline]") {
   using namespace std::string_view_literals;
   REQUIRE(esc(L"abc.exe") == L"abc.exe"sv);
@@ -37,7 +15,19 @@ TEST_CASE("Command line parsing", "[commandline]") {
   REQUIRE(esc(L"\\\\\"") == L"\"\\\\\\\\\\\"\""sv); // \\" -> "\\\\\""
   REQUIRE(esc(L"test \"test\\ test") == L"\"test \\\"test\\ test\""sv);
 
-  ClientTest::testCreateCommandLine();
+  const wchar_t *const argv[] = {
+    L"C:\\Windows\\System32\\cmd.exe",
+    L"/c",
+    L"foo bar",
+    L"\"\\test\"",
+    L"\\\"foo bar\"\\",
+  };
+  const int argc = WSUDO_ARRAYSIZE(argv);
+  auto options = wsudo::Client::Options{};
+  options.useShim = false;
+  options.parse(argc, argv);
+  auto &cl = options.commandLine;
+  REQUIRE(cl == L"C:\\Windows\\System32\\cmd.exe /c \"foo bar\" \"\\\"\\\\test\\\"\" \"\\\\\\\"foo bar\\\"\\\\\""sv);
 }
 
 static void testOneFileName(std::wstring_view filename) {
