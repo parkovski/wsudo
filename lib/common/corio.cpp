@@ -297,14 +297,32 @@ wscoro::task<size_t> CorIO::Pipe::read(std::string &buffer) {
   auto this_coro = co_await wscoro::this_coroutine;
 
   setOffset(0);
+  DWORD err;
+  DWORD bytes;
   while (true) {
     _key.coroutine = this_coro;
     prepareOverlapped();
     log::trace("CorIO::Pipe::read queue async IO for {} bytes.", chunkSize);
-    ReadFile(_file.get(), chunk, chunkSize, nullptr, &_overlapped);
-    co_await std::suspend_always{};
+    if (!ReadFile(_file.get(), chunk, chunkSize, &bytes, &_overlapped)) {
+      err = GetLastError();
+      if (err == ERROR_IO_PENDING) {
+        co_await std::suspend_always{};
+      } else if (err == ERROR_BROKEN_PIPE) {
+        log::trace("CorIO::Pipe::read: Pipe ended.");
+        co_return 0;
+      } else {
+        log::error("(sync) CorIO::Pipe::read failed: 0x{:X} {}",
+                   err, lastErrorString(err));
+        co_return 0;
+      }
+    } else {
+      log::debug("ReadFile returned synchronously.");
+      addOffset((size_t)bytes);
+      buffer.append(chunk, chunk + bytes);
+      co_return offset();
+    }
+    log::trace("CorIO::Pipe::read resume");
 
-    DWORD bytes;
     if (GetOverlappedResult(_file.get(), &_overlapped, &bytes, false)) {
       addOffset((size_t)bytes);
       buffer.append(chunk, chunk + bytes);
@@ -313,15 +331,18 @@ wscoro::task<size_t> CorIO::Pipe::read(std::string &buffer) {
       co_return offset();
     }
 
-    auto err = GetLastError();
+    err = GetLastError();
     if (err == ERROR_MORE_DATA) {
       buffer.append(chunk, chunk + bytes);
       addOffset((size_t)bytes);
       log::trace("CorIO::Pipe::read {} bytes ({} total); more data available.",
                  bytes, offset());
       continue;
-    } else if (err == ERROR_BROKEN_PIPE) {
+    } else if (err == ERROR_BROKEN_PIPE || err == ERROR_NO_DATA) {
       log::info("Pipe disconnected by client.");
+      co_return 0;
+    } else if (err == ERROR_IO_INCOMPLETE) {
+      log::info("CorIO::Pipe::read: IO incomplete");
       co_return 0;
     }
 

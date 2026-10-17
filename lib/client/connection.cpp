@@ -40,6 +40,8 @@ void Client::Connection::connect(int maxAttempts) {
 }
 
 void Client::Connection::disconnect() {
+  //_buffer = "X";
+  //sendBuffer();
   CloseHandle(_pipe.release());
 }
 

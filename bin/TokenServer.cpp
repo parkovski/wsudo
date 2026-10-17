@@ -136,7 +136,7 @@ VOID WINAPI serviceMain(DWORD argc, LPWSTR *argv) {
   Server server{PipeFullPath};
   g_server = &server;
 
-  int exitCode = server(2, 2);
+  int exitCode = server(Server::UserThreads, Server::SystemThreads);
 
   g_serviceStatus.dwWin32ExitCode = (DWORD)exitCode;
   g_serviceStatus.dwCurrentState = SERVICE_STOPPED;
@@ -282,7 +282,7 @@ int wmain(int argc, wchar_t *argv[]) {
 
     Server server{PipeFullPath};
     g_server = &server;
-    return server(2, 2);
+    return server(Server::UserThreads, Server::SystemThreads);
   } else {
     wchar_t serviceName[] = L"wsudo";
     SERVICE_TABLE_ENTRY dispatchTable[] = {

@@ -27,6 +27,9 @@ class Server {
 public:
   class Connection;
 
+  constexpr static int UserThreads = 1;
+  constexpr static int SystemThreads = 1;
+
 private:
   // Security
   wil::unique_sid _sid;
