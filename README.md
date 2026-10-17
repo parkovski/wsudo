@@ -1,53 +1,76 @@
-# `wsudo`: Proof of concept sudo for Windows
+# `wsudo`: UAC-less sudo for Windows
+
+## Why another sudo for Windows?
+Every other sudo project I've seen requires at least one UAC prompt. I haven't
+tried the official one from Microsoft, but it appears to be abandoned. This
+sudo runs a system service to assign new tokens to a process and therefore you
+never see a UAC prompt. Seriously. Never.
 
 ## ⚠ Not production ready!
-This project is in the very early stages. It may have bugs and security holes. Use at your own risk!
-
-## What does it look like?
-A terminal. Or two terminals currently. [See this short demo](https://raw.githubusercontent.com/parkovski/wsudo/assets/demo.mp4).
+This project is in the very early stages. It may have bugs and security holes.
+Use at your own risk!
 
 ## How to build/run?
-Currently the only dependencies are spdlog, fmt, and the Windows SDK. I use vcpkg to install these. The project builds with CMake - I use the Ninja generator but the VS one is probably fine. After making sure your spdlog and fmt work, do:
+This project relies on another of my projects,
+[wscoro](https://github.com/parkovski/wscoro). To build, you need to clone that
+project in a sibling directory to this one. After that, you can install the
+dependencies with vcpkg and build with CMake/Ninja.
+
+Make sure your `VCPKG_ROOT` points to a valid location, and then do:
 
 ```powershell
-...\wsudo> mkdir build
-...\wsudo> cd build
-...\wsudo> cmake -G Ninja ..
-...\wsudo> cmake --build .
+...\wsudo> cmake --preset=x64 # Or arm64 if that's your platform.
+...\wsudo> cmake --build build
 ```
 
-This will produce two binaries in `bin\Debug`. To try it, start `TokenServer.exe` in an admin console; then in a separate unelevated console run `wsudo.exe <program> <args>`. Currently you need to provide the full path to the program. It will ask for your password, but this is not yet implemented so the password is always `password`. To see the difference in elevation status, try `wsudo.exe C:\Windows\System32\whoami.exe /groups` and look for the `Mandatory Label` section.
+This will produce three binaries in `build\bin`. From an elevated shell, run
+`./TokenServer.exe install && sc start wsudo`. Note that this creates a group
+called `wsudoers` and when I eventually get around to it, the service will give
+permission to this group allowing members to start it without admin privileges.
+In this way, `wsudo.exe` will be able to start the service on demand. Currently
+though the group does nothing, so don't worry about it.
 
-## What makes this one different?
-It uses a token server, which can be run as a system service, to remotely reassign the primary token for an interactive process. A process you create with the `wsudo.exe` command inherits the environment as if you just called the target command itself, but it starts elevated with no UAC involvement.
+After the service is started, from a non-elevated shell run `wsudo
+whatever-you-want`. It will ask for your password once and then never again
+until the service is restarted (or you delete `~/.wsudo_session`). This
+behavior will change.
 
-## How?
+Note that most of the command line options for `wsudo.exe` are not implemented
+yet.
+
+## How does it work?
 There are three ways to create an elevated process:
 1. Request elevation with UAC.
 2. Be an executable signed by the Windows Publisher.
 3. Be an elevated process.
 
-The system will automatically start services elevated, but they have their own environment, which is not very useful for command line purposes. However, there's a trick - you can start a regular restricted process suspended in your own session and notify the service, which uses `NtSetInformationProcess` to change the remote process token to an elevated one before it starts.
+The system will automatically start services elevated, but they have their own
+environment, which is not very useful for command line purposes. However,
+there's a trick - you can start a regular restricted process suspended in your
+own session and notify the service, which uses `NtSetInformationProcess` to
+change the remote process token to an elevated one before it starts.
 
-I originally created a remote process in the service, but setting up the environment is tricky and requires digging through undocumented parts of the PEB. With this method, the system sets up all the inheritance correctly, and we only need one undocumented call to elevate the process.
-
-It may be possible to achieve this without any undocumented APIs by creating the process in the server and using `PROC_THREAD_ATTRIBUTE_PARENT_PROCESS`.
+I originally created a remote process in the service, but setting up the
+environment is tricky and requires digging through undocumented parts of the
+PEB. With this method, the system sets up all the inheritance correctly, and
+we only need one undocumented call to elevate the process.
 
 ## What features are missing?
 Most of them. Here are the big ones:
-- Create a token for the client user instead of just duplicating the server's token.
-- Cache the users' tokens for a while after a successful authentication (note: should be per-session).
-- Implement Windows service functionality for the server.
-- Create some type of "sudoers" config file or registry key and enforce permissions.
-- Improve the client's command line handling - shouldn't have to type the full path to an exe.
+- Expiring the user's session after some amount of time.
+- Create some type of "sudoers" config file or registry key and enforce
+    permissions.
 - Improve error handling and write tests.
 
 ### Other ideas
-- Options to set user and privileges.
+- Options to set user and privileges. Logging in as another user without their
+    password requires using `NtCreateToken` which is some dark magic, so this
+    is a big maybe.
 - PowerShell wrapper cmdlets.
 - Integration with WSL sudo.
-- COM elevation.
-- Session selection.
 
-## Additional resources
-* [OpenSSH's usage of LSA](https://github.com/PowerShell/openssh-portable/blob/latestw_all/contrib/win32/win32compat/win32_usertoken_utils.c)
+## Why the GPL?
+I believe that security software should be open and auditable. If I went with
+something like MIT, people could clone this and keep their changes to
+themselves, which I don't want. That said, if you want to use part of this
+project with GPL-incompatible software, that's probably ok with me - just ask.
