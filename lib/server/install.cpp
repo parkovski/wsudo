@@ -1,6 +1,8 @@
 #include "wsudo/wsudo.h"
 #include "wsudo/server.h"
 #include <Lm.h>
+#define SECURITY_WIN32
+#include <Security.h>
 #include <wil/result_macros.h>
 
 #pragma comment(lib, "Netapi32.lib")
@@ -49,8 +51,7 @@ HRESULT wsudo::installService() {
     wchar_t *path = new wchar_t[pathSize];
     do {
       copied = GetModuleFileName(nullptr, path, pathSize);
-      if (copied == pathSize && GetLastError() == ERROR_INSUFFICIENT_BUFFER)
-      {
+      if (copied == pathSize && GetLastError() == ERROR_INSUFFICIENT_BUFFER) {
         delete[] path;
         pathSize *= 2;
         path = new wchar_t[pathSize];
@@ -144,7 +145,24 @@ HRESULT wsudo::installService() {
       RETURN_WIN32(result);
     }
 
-    log::info("Granted wsudoers access to start the wsudo service");
+    log::info("Granted wsudoers access to start the wsudo service.");
+
+    std::wstring username;
+    ULONG usernameLength = 0;
+    GetUserNameEx(NameSamCompatible, nullptr, &usernameLength);
+    if (GetLastError() == ERROR_MORE_DATA) {
+      username.resize(usernameLength);
+      if (GetUserNameEx(NameSamCompatible, username.data(), &usernameLength)) {
+        auto slashPos = username.find(L'\\');
+        if (slashPos != std::wstring::npos) {
+          username.erase(0, slashPos + 1);
+        }
+        log::info(L"You can add yourself to the wsudoers group by typing "
+                  L"\"net localgroup wsudoers {} /add\". "
+                  L"Note that you will need to log out and in again "
+                  L"for this to take effect.", username);
+      }
+    }
   }
 
   return S_OK;
