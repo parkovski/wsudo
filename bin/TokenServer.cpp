@@ -199,14 +199,13 @@ int wmain(int argc, wchar_t *argv[]) {
         }
       } else if (!wcscmp(argv[i], L"uninstall")) {
         log::info("Uninstalling wsudo token server...");
-        auto result = uninstallService();
-        if (SUCCEEDED(result)) {
+        bool result = uninstallService();
+        if (result) {
           log::info("Uninstallation successful.");
           return 0;
         } else {
-          log::error("Uninstallation failed: (0x{:X}): {}",
-                     result, lastErrorString(result));
-          return result;
+          log::error("Uninstallation failed.");
+          return HRESULT_FROM_WIN32(ERROR_OUT_OF_PAPER); // idk lol
         }
       } else if (!wcscmp(argv[i], L"clear-event-log")) {
         auto result = clearEventLog();

@@ -10,7 +10,7 @@ endif()
 
 project(wsudo)
 set(wsudo_VERSION_MAJOR 0)
-set(wsudo_VERSION_MINOR 1)
+set(wsudo_VERSION_MINOR 2)
 set(wsudo_VERSION_PATCH 0)
 
 set(CMAKE_CXX_STANDARD 20)

@@ -14,7 +14,7 @@
 namespace wsudo {
 
 HRESULT installService();
-HRESULT uninstallService();
+bool uninstallService();
 HRESULT clearEventLog();
 
 extern bool g_isService;
