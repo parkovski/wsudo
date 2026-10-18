@@ -82,7 +82,7 @@ HANDLE Server::initPipe(bool first) {
 
 Server::Server(std::wstring pipeName)
   : _pipeName{std::move(pipeName)}
-  , _sessionManager{}
+  , _sessionManager{this}
 {}
 
 int Server::operator()(int nUserThreads, int nSystemThreads) {

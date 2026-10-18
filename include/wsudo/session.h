@@ -19,6 +19,7 @@ namespace wsudo {
 
 class Session;
 class SessionManager;
+class Server;
 
 struct SessionTimerData {
   std::shared_ptr<Session> session;
@@ -77,6 +78,7 @@ private:
 
 class SessionManager {
   constexpr static unsigned DefaultTtlSeconds = 5 * 60;
+  Server *_server;
   unsigned _defaultTtlSeconds;
   HANDLE _timerQueue;
   std::wstring _localDomain;
@@ -84,7 +86,8 @@ class SessionManager {
   static constexpr unsigned KeyLength = 64;
 
 public:
-  explicit SessionManager(unsigned defaultTtlSeconds = 0) noexcept;
+  explicit SessionManager(Server *server, unsigned defaultTtlSeconds = 0)
+                          noexcept;
 
   SessionManager(const SessionManager &) = delete;
   SessionManager &operator=(const SessionManager &) = delete;

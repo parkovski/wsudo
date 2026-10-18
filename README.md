@@ -31,9 +31,10 @@ In this way, `wsudo.exe` will be able to start the service on demand. Currently
 though the group does nothing, so don't worry about it.
 
 After the service is started, from a non-elevated shell run `wsudo
-whatever-you-want`. It will ask for your password once and then never again
-until the service is restarted (or you delete `~/.wsudo_session`). This
-behavior will change.
+whatever-you-want`. It will ask for your password, after which you have a 5
+minute window of no repeat password prompts. This window is reset each time you
+run `wsudo`. After 5 minutes of inactivity your session times out and you will
+have to enter your password again.
 
 Note that most of the command line options for `wsudo.exe` are not implemented
 yet.

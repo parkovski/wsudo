@@ -1,6 +1,7 @@
 #define WSUDO_NO_NT_API
 #include "wsudo/wsudo.h"
 #include "wsudo/session.h"
+#include "wsudo/server.h"
 #include <cstdlib>
 #include <random>
 #include <atomic>
@@ -72,8 +73,10 @@ void Session::refresh(std::shared_ptr<Session> session) {
              _domain, _username, _ttlExpiresSeconds);
 }
 
-SessionManager::SessionManager(unsigned defaultTtlSeconds) noexcept
-  : _defaultTtlSeconds{
+SessionManager::SessionManager(Server *server, unsigned defaultTtlSeconds)
+                               noexcept
+  : _server{server}
+  , _defaultTtlSeconds{
     defaultTtlSeconds == 0
       ? DefaultTtlSeconds
       : defaultTtlSeconds
@@ -154,6 +157,10 @@ void SessionManager::expire(Session *session) {
     return;
   }
   _sessions.erase(it);
+
+  if (_sessions.empty()) {
+    _server->quit(0);
+  }
 }
 
 std::string SessionManager::makeKey() const {
