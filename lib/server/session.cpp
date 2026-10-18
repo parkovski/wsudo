@@ -3,10 +3,18 @@
 #include "wsudo/session.h"
 #include <cstdlib>
 #include <random>
+#include <atomic>
 
 #define NT_SUCCESS(status) ((long)(status) >= 0)
 
 using namespace wsudo;
+
+static void CALLBACK timerRoutine(LPVOID data_, BOOLEAN) {
+  auto *data = static_cast<SessionTimerData *>(data_);
+  log::trace(L"Timer triggered for {}\\{}", data->session->domain(),
+             data->session->username());
+  data->sessionManager->expire(data->session.get());
+}
 
 Session::Session(SessionManager &sessionManager, std::wstring domain,
                  std::wstring username, std::wstring password,
@@ -15,17 +23,53 @@ Session::Session(SessionManager &sessionManager, std::wstring domain,
   , _domain{std::move(domain)}
   , _username{std::move(username)}
   , _key{sessionManager.makeKey()}
-  , _ttlResetSeconds{ttlSeconds}
+  , _timer{nullptr}
+  , _timerData{nullptr}
   , _ttlExpiresSeconds{ttlSeconds}
 {
+  WSUDO_SCOPE_EXIT { password.assign(password.length(), L'\0'); };
   if (!LogonUserExW(_username.c_str(), _domain.c_str(), password.c_str(),
                     LOGON32_LOGON_INTERACTIVE, LOGON32_PROVIDER_DEFAULT,
                     _token.put(), _pSid.put(), nullptr, nullptr, nullptr))
   {
     log::debug("LogonUserExW failed: {}", lastErrorString());
+    return;
   }
+}
 
-  password.assign(password.length(), L'\0');
+Session::~Session() {
+  expire();
+  if (_timerData) {
+    delete _timerData;
+  }
+}
+
+void Session::expire() {
+  if (_timer) {
+    auto timer = _timer;
+    _timer = nullptr;
+    std::atomic_thread_fence(std::memory_order_seq_cst); // Is this necessary?
+    DeleteTimerQueueTimer(_sessionManager->timerQueue(), timer, nullptr);
+  }
+  log::trace(L"Session for {}\\{} expired.", _domain, _username);
+}
+
+void Session::refresh(std::shared_ptr<Session> session) {
+  if (!_timerData) {
+    _timerData = new SessionTimerData{session, _sessionManager};
+  }
+  if (_timer) {
+    ChangeTimerQueueTimer(_sessionManager->timerQueue(), _timer,
+                          1000 * _ttlExpiresSeconds, 0);
+  } else {
+    CreateTimerQueueTimer(
+      &_timer, _sessionManager->timerQueue(), timerRoutine, _timerData,
+      1000 * _ttlExpiresSeconds, 0,
+      WT_EXECUTEINTIMERTHREAD | WT_EXECUTEONLYONCE
+    );
+  }
+  log::trace(L"Session for {}\\{} refreshed. Will trigger in {} secs.",
+             _domain, _username, _ttlExpiresSeconds);
 }
 
 SessionManager::SessionManager(unsigned defaultTtlSeconds) noexcept
@@ -34,7 +78,7 @@ SessionManager::SessionManager(unsigned defaultTtlSeconds) noexcept
       ? DefaultTtlSeconds
       : defaultTtlSeconds
   }
-  , _timer{CreateWaitableTimerW(nullptr, false, nullptr)}
+  , _timerQueue{CreateTimerQueue()}
   , _localDomain{}
 {
   NTSTATUS status;
@@ -69,12 +113,17 @@ SessionManager::SessionManager(unsigned defaultTtlSeconds) noexcept
             _localDomain);
 }
 
+SessionManager::~SessionManager() {
+  DeleteTimerQueueEx(_timerQueue, nullptr);
+}
+
 std::shared_ptr<Session>
 SessionManager::find(std::string_view key) {
   auto it = _sessions.find(std::string{key});
   if (it == _sessions.end()) {
     return {};
   }
+  it->second->refresh(it->second);
   return it->second;
 }
 
@@ -92,9 +141,19 @@ SessionManager::create(std::wstring domain, std::wstring username,
   if (!*session) {
     return {};
   }
+  session->refresh(session);
 
   _sessions.emplace(std::string{session->key()}, session);
   return session;
+}
+
+void SessionManager::expire(Session *session) {
+  session->expire();
+  auto it = _sessions.find(std::string{session->key()});
+  if (it == _sessions.end()) {
+    return;
+  }
+  _sessions.erase(it);
 }
 
 std::string SessionManager::makeKey() const {

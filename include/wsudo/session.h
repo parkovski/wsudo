@@ -17,13 +17,21 @@
 
 namespace wsudo {
 
+class Session;
 class SessionManager;
+
+struct SessionTimerData {
+  std::shared_ptr<Session> session;
+  SessionManager *sessionManager;
+};
 
 class Session {
 public:
   explicit Session(SessionManager &manager, std::wstring domain,
                    std::wstring username, std::wstring password,
                    unsigned ttlSeconds);
+
+  ~Session();
 
   std::wstring_view domain() const noexcept {
     return _domain;
@@ -49,6 +57,10 @@ public:
     return !!_token;
   }
 
+  void expire();
+
+  void refresh(std::shared_ptr<Session> session);
+
 private:
   SessionManager *_sessionManager;
   const std::wstring _domain;
@@ -56,18 +68,17 @@ private:
   const std::string _key;
   wil::unique_handle _token;
   wil::unique_sid _pSid;
-  // The amount of time this session will be kept open without being referenced.
-  // Each time the session is used, its lifetime is reset to this value.
-  unsigned _ttlResetSeconds;
+  HANDLE _timer;
+  SessionTimerData *_timerData;
   // The time when this session expires if left untouched.
   unsigned _ttlExpiresSeconds;
 };
 
 
 class SessionManager {
-  constexpr static unsigned DefaultTtlSeconds = 60 * 5;
+  constexpr static unsigned DefaultTtlSeconds = 5 * 60;
   unsigned _defaultTtlSeconds;
-  wil::unique_handle _timer;
+  HANDLE _timerQueue;
   std::wstring _localDomain;
   std::unordered_map<std::string, std::shared_ptr<Session>> _sessions;
   static constexpr unsigned KeyLength = 64;
@@ -81,17 +92,23 @@ public:
   SessionManager(SessionManager &&) = delete;
   SessionManager &operator=(SessionManager &&) = delete;
 
+  ~SessionManager();
+
   std::shared_ptr<Session> find(std::string_view key);
 
   std::shared_ptr<Session>
   create(std::wstring domain, std::wstring username,
          std::wstring password, unsigned ttlSeconds = 0);
 
+  void expire(Session *session);
+
   std::string makeKey() const;
 
   unsigned defaultTtlSeconds() const {
     return _defaultTtlSeconds;
   }
+
+  HANDLE timerQueue() const { return _timerQueue; }
 
   explicit operator bool() const noexcept { return !_localDomain.empty(); }
 };
