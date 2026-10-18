@@ -9,6 +9,7 @@ Client::Options::Options() noexcept
   , keepEnvironment{false}
   , useShim{true}
   , runAsSystem{false}
+  , detach{false}
   , commandLine{}
 {}
 
@@ -55,7 +56,7 @@ bool Client::Options::parse(int argc, const wchar_t *const *argv) noexcept {
       } else if (arg == L"-h" || arg == L"--help") {
         showHelp = true;
         return true;
-      } else if (arg == L"-L" || arg.starts_with(L"--log=")) {
+      } else if (arg == L"-L" || arg.starts_with(L"--log-level=")) {
         std::wstring_view loglevel;
         if (arg == L"-L") {
           if (i + 1 < argc) {
@@ -65,9 +66,9 @@ bool Client::Options::parse(int argc, const wchar_t *const *argv) noexcept {
             return false;
           }
         } else {
-          loglevel = arg.substr(6);
+          loglevel = arg.substr(wcslen(L"--log-level="));
           if (loglevel.empty()) {
-            log::error("expected log level after '--log='");
+            log::error("expected log level after '--log-level='");
           }
         }
         if (loglevel == L"critical") {
@@ -101,6 +102,8 @@ bool Client::Options::parse(int argc, const wchar_t *const *argv) noexcept {
         startService = false;
       } else if (arg == L"--no-shim") {
         useShim = false;
+      } else if (arg == L"--detach") {
+        detach = true;
       } else if (arg == L"--system") {
         runAsSystem = true;
       }

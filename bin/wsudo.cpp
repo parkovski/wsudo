@@ -12,10 +12,16 @@ static void showHelp() {
   log::print("Options:\n");
   log::print("  -E, --preserve-env          preserve environment when"
              " running command\n");
+  log::print("  -L, --log-level=...         set the log level to one of: "
+             "off, critical, error, warn, info, debug, trace\n");
   log::print("  -h, --help                  display help and exit\n");
-  log::print("  --no-shim                   don't use wsudo-shim.exe\n");
+  log::print("  --no-shim                   don't use a shim process to start "
+             "the child process - this may result in some programs not "
+             "working\n");
   log::print("  --no-service                don't try to start the wsudo"
              " service\n");
+  log::print("  --detach                    don't wait for the child process "
+             "to finish - this may break console apps\n");
   log::print("  --system                    run as NT AUTHORITY\\System\n");
 }
 
@@ -26,7 +32,8 @@ static bool startService() {
   }
   WSUDO_SCOPE_EXIT { CloseServiceHandle(scManager); };
 
-  auto service = OpenService(scManager, L"wsudo", SERVICE_START);
+  auto service = OpenService(scManager, L"wsudo",
+                             SERVICE_START | SERVICE_QUERY_STATUS);
   if (!service) {
     return false;
   }
@@ -36,6 +43,25 @@ static bool startService() {
     if (GetLastError() == ERROR_SERVICE_ALREADY_RUNNING) {
       return true;
     }
+    return false;
+  }
+
+  const unsigned timeout = 1000;
+  unsigned timeElapsed = 0;
+  SERVICE_STATUS status;
+  while (timeElapsed < timeout) {
+    if (!QueryServiceStatus(service, &status)) {
+      return false;
+    }
+    if (status.dwCurrentState != SERVICE_RUNNING) {
+      Sleep(100);
+      timeElapsed += 100;
+    } else {
+      break;
+    }
+  }
+
+  if (status.dwCurrentState != SERVICE_RUNNING) {
     return false;
   }
 
@@ -93,17 +119,19 @@ int wmain(int argc, wchar_t *argv[]) {
     return 0;
   }
 
-  log::debug("Trying to start the service...");
-  if (!startService()) {
-    log::error("Couldn't start the wsudo service.");
-    RETURN_WIN32(ERROR_SERVICE_NOT_ACTIVE);
+  if (opts.startService) {
+    log::debug("Trying to start the service...");
+    if (!startService()) {
+      log::error("Couldn't start the wsudo service.");
+      RETURN_WIN32(ERROR_SERVICE_NOT_ACTIVE);
+    }
   }
 
   char cdata alignas(Client)[sizeof(Client)];
   Client &client = *reinterpret_cast<Client *>(cdata);
 
   try {
-    new (cdata) Client(PipeFullPath, argc - 1, argv + 1);
+    new (cdata) Client(PipeFullPath);
   } catch (wil::ResultException &e) {
     auto err = e.GetErrorCode();
     if (err == HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND)) {
@@ -114,5 +142,5 @@ int wmain(int argc, wchar_t *argv[]) {
   WSUDO_SCOPE_EXIT { client.~Client(); };
   log::debug("Client initialized");
 
-  return client(opts.commandLine);
+  return client(opts.commandLine, !opts.detach);
 }

@@ -54,6 +54,7 @@ public:
     bool keepEnvironment;
     bool useShim;
     bool runAsSystem;
+    bool detach;
     std::wstring commandLine;
 
     Options() noexcept;
@@ -94,10 +95,9 @@ private:
   int resume(PROCESS_INFORMATION &pi, bool wait);
 
 public:
-  explicit Client(const std::wstring &pipeName, int argc,
-                  const wchar_t *const *argv);
+  explicit Client(const std::wstring &pipeName);
 
-  int operator()(std::wstring &commandLine);
+  int operator()(std::wstring &commandLine, bool wait);
 };
 
 } // namespace wsudo

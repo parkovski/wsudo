@@ -302,8 +302,7 @@ int Client::resume(PROCESS_INFORMATION &pi, bool wait) {
   return static_cast<int>(exitCode);
 }
 
-Client::Client(const std::wstring &pipeName, int argc,
-               const wchar_t *const *argv)
+Client::Client(const std::wstring &pipeName)
   : _conn{pipeName}
 {
   lookupUsername();
@@ -323,7 +322,7 @@ Client::Client(const std::wstring &pipeName, int argc,
   }
 }
 
-int Client::operator()(std::wstring &commandLine) {
+int Client::operator()(std::wstring &commandLine, bool wait) {
   if (commandLine.empty()) {
     return ERROR_FILE_NOT_FOUND;
   }
@@ -358,5 +357,5 @@ int Client::operator()(std::wstring &commandLine) {
   _conn.disconnect();
 
   log::debug("Resuming process {}.", pi.hProcess);
-  return resume(pi, true);
+  return resume(pi, wait);
 }
