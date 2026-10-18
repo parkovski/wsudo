@@ -213,7 +213,5 @@ HRESULT wsudo::clearEventLog() {
     RETURN_WIN32(GetLastError());
   }
 
-  log::info("Event log cleared.");
-
   return S_OK;
 }

@@ -145,6 +145,16 @@ VOID WINAPI serviceMain(DWORD argc, LPWSTR *argv) {
   SetServiceStatus(g_serviceStatusHandle, &g_serviceStatus);
 }
 
+void showHelp() {
+  log::print(
+    "Available commands:\n"
+    "  install\n"
+    "  uninstall\n"
+    "  log-level=<level>\n"
+    "  clear-event-log\n"
+  );
+}
+
 int wmain(int argc, wchar_t *argv[]) {
   g_isService = isLocalSystem();
   if (g_isService) {
@@ -186,7 +196,11 @@ int wmain(int argc, wchar_t *argv[]) {
 
   if (argc > 1) {
     for (int i = 1; i < argc; ++i) {
-      if (!wcscmp(argv[i], L"install")) {
+      if (!wcscmp(argv[i], L"help") || !wcscmp(argv[i], L"-h") ||
+          !wcscmp(argv[i], L"--help")) {
+        showHelp();
+        return 0;
+      } else if (!wcscmp(argv[i], L"install")) {
         log::info("Installing wsudo token server...");
         auto result = installService();
         if (SUCCEEDED(result)) {
