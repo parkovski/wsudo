@@ -1,5 +1,6 @@
 #include "wsudo/wsudo.h"
 #include "wsudo/client.h"
+#include <winsvc.h>
 
 #include <spdlog/sinks/stdout_color_sinks.h>
 
@@ -16,6 +17,29 @@ static void showHelp() {
   log::print("  --no-service                don't try to start the wsudo"
              " service\n");
   log::print("  --system                    run as NT AUTHORITY\\System\n");
+}
+
+static bool startService() {
+  auto scManager = OpenSCManager(nullptr, nullptr, STANDARD_RIGHTS_READ);
+  if (!scManager) {
+    return false;
+  }
+  WSUDO_SCOPE_EXIT { CloseServiceHandle(scManager); };
+
+  auto service = OpenService(scManager, L"wsudo", SERVICE_START);
+  if (!service) {
+    return false;
+  }
+  WSUDO_SCOPE_EXIT { CloseServiceHandle(service); };
+
+  if (!StartService(service, 0, nullptr)) {
+    if (GetLastError() == ERROR_SERVICE_ALREADY_RUNNING) {
+      return true;
+    }
+    return false;
+  }
+
+  return true;
 }
 
 int wmain(int argc, wchar_t *argv[]) {
@@ -57,16 +81,22 @@ int wmain(int argc, wchar_t *argv[]) {
 
   if (argc < 2) {
     showHelp();
-    return HRESULT_FROM_WIN32(ERROR_INVALID_PARAMETER);
+    RETURN_WIN32(ERROR_INVALID_PARAMETER);
   }
 
   Client::Options opts;
   if (!opts.parse(argc - 1, argv + 1)) {
     showHelp();
-    return HRESULT_FROM_WIN32(ERROR_INVALID_PARAMETER);
+    RETURN_WIN32(ERROR_INVALID_PARAMETER);
   } else if (opts.showHelp) {
     showHelp();
     return 0;
+  }
+
+  log::debug("Trying to start the service...");
+  if (!startService()) {
+    log::error("Couldn't start the wsudo service.");
+    RETURN_WIN32(ERROR_SERVICE_NOT_ACTIVE);
   }
 
   char cdata alignas(Client)[sizeof(Client)];

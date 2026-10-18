@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg/master/scripts/vcpkg.schema.json",
   "name": "wsudo",
-  "version-string": "0.1-alpha",
+  "version-string": "0.2-alpha",
   "dependencies": [
     "fmt",
     {
@@ -25,5 +25,5 @@
   },
   "$get-this-yourself": "https://github.com/parkovski/wscoro",
   "$required-for-tests": "catch2 v3",
-  "builtin-baseline": "357b1a6f8343064ca982a20771e420fcecfe7efc"
+  "builtin-baseline": "bf19794383e8fb95eba5aa553235bc8ec2271688"
 }

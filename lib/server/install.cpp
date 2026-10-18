@@ -6,6 +6,7 @@
 #include <wil/result_macros.h>
 
 #pragma comment(lib, "Netapi32.lib")
+#pragma comment(lib, "Secur32.lib")
 
 HRESULT wsudo::installService() {
   {

@@ -4,6 +4,7 @@
 #include <Windows.h>
 #include <variant>
 #include <wil/result_macros.h>
+#include <winerror.h>
 
 #define SECURITY_WIN32
 #include <Security.h>
@@ -342,9 +343,7 @@ int Client::operator()(std::wstring &commandLine) {
   try {
     pi = createSuspendedProcess(commandLine);
   } catch (wil::ResultException &) {
-    // TODO: this has a pretty accurate description but figure out better error
-    // handling here.
-    return ERROR_NO_PROC_SLOTS;
+    return ERROR_CHILD_PROCESS_BLOCKED;
   }
   WSUDO_SCOPE_EXIT {
     CloseHandle(pi.hThread);
