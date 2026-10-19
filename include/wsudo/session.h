@@ -77,10 +77,14 @@ private:
 
 
 class SessionManager {
+  // Time for a session to live before expiring.
   constexpr static unsigned DefaultTtlSeconds = 5 * 60;
+  // Time for the server to stay active if no sessions are open.
+  constexpr static unsigned DefaultTimeoutSeconds = 30;
   Server *_server;
   unsigned _defaultTtlSeconds;
   HANDLE _timerQueue;
+  HANDLE _timeoutTimer;
   std::wstring _localDomain;
   std::unordered_map<std::string, std::shared_ptr<Session>> _sessions;
   static constexpr unsigned KeyLength = 64;
@@ -96,6 +100,10 @@ public:
   SessionManager &operator=(SessionManager &&) = delete;
 
   ~SessionManager();
+
+  bool hasSession() const { return !_sessions.empty(); }
+
+  void quit(int exitCode = 0);
 
   std::shared_ptr<Session> find(std::string_view key);
 

@@ -73,6 +73,14 @@ void Session::refresh(std::shared_ptr<Session> session) {
              _domain, _username, _ttlExpiresSeconds);
 }
 
+static void CALLBACK timerRoutineTimeout(LPVOID data_, BOOLEAN) {
+  auto *sessionManager = static_cast<SessionManager *>(data_);
+  if (sessionManager->hasSession()) {
+    return;
+  }
+  sessionManager->quit();
+}
+
 SessionManager::SessionManager(Server *server, unsigned defaultTtlSeconds)
                                noexcept
   : _server{server}
@@ -82,6 +90,7 @@ SessionManager::SessionManager(Server *server, unsigned defaultTtlSeconds)
       : defaultTtlSeconds
   }
   , _timerQueue{CreateTimerQueue()}
+  , _timeoutTimer{nullptr}
   , _localDomain{}
 {
   NTSTATUS status;
@@ -107,17 +116,27 @@ SessionManager::SessionManager(Server *server, unsigned defaultTtlSeconds)
     return;
   }
   wil::unique_lsamem_ptr<POLICY_ACCOUNT_DOMAIN_INFO> domain{domainRaw};
-
   // Note: Length is the size in bytes, not including terminating null (if any).
   // wstring constructor expects a length in wchar_t sized characters.
   _localDomain = std::wstring{domain->DomainName.Buffer,
                               (size_t)(domain->DomainName.Length) >> 1};
+
+  CreateTimerQueueTimer(
+    &_timeoutTimer, _timerQueue, timerRoutineTimeout, this,
+    1000 * DefaultTimeoutSeconds, 0,
+    WT_EXECUTEINTIMERTHREAD | WT_EXECUTEONLYONCE
+  );
+
   log::info(L"Session manager initialized for local domain '{}'.",
             _localDomain);
 }
 
 SessionManager::~SessionManager() {
   DeleteTimerQueueEx(_timerQueue, nullptr);
+}
+
+void SessionManager::quit(int exitCode) {
+  _server->quit(exitCode);
 }
 
 std::shared_ptr<Session>
