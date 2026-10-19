@@ -8,7 +8,7 @@ never see a UAC prompt. Seriously. Never.
 
 ## ⚠ Not production ready!
 This project is in the very early stages. It may have bugs and security holes.
-Use at your own risk!
+Use at your own risk! That said, I am using this regularly and it works for me.
 
 ## How to build/run?
 This project relies on another of my projects,
