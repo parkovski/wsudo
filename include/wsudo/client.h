@@ -75,6 +75,8 @@ private:
 
   std::wstring getUserDirectoryFileName(std::wstring_view filename) const;
 
+  bool checkPrivateFliePermissions(const std::wstring &filename) const;
+
   std::string
   readPrivateFile(std::wstring_view name, bool create = false) const;
 

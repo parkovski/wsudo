@@ -5,6 +5,7 @@
 #include <variant>
 #include <wil/result_macros.h>
 #include <winerror.h>
+#include <AclAPI.h>
 
 #define SECURITY_WIN32
 #include <Security.h>
@@ -79,10 +80,98 @@ std::wstring Client::getUserDirectoryFileName(std::wstring_view filename)
   return path;
 }
 
+bool Client::checkPrivateFliePermissions(const std::wstring &filename) const {
+  log::debug(L"Checking permissions on \"{}\".", filename);
+  PSECURITY_DESCRIPTOR secDesc;
+  PACL dacl;
+  if (GetNamedSecurityInfo(
+    filename.c_str(), SE_FILE_OBJECT, DACL_SECURITY_INFORMATION,
+    nullptr, nullptr, &dacl, nullptr, &secDesc
+  ) != ERROR_SUCCESS) {
+    return false;
+  }
+  WSUDO_SCOPE_EXIT { LocalFree(secDesc); };
+
+  constexpr DWORD SidSize = 256;
+  DWORD cbSid = SidSize;
+  PSID sidSystem{new char[SidSize]}, sidAdmin{new char[SidSize]}, sidUser;
+  WSUDO_SCOPE_EXIT {
+    delete[] reinterpret_cast<char *>(sidSystem);
+    delete[] reinterpret_cast<char *>(sidAdmin);
+  };
+  if (!CreateWellKnownSid(WinLocalSystemSid, nullptr, sidSystem, &cbSid)) {
+    return false;
+  }
+  cbSid = SidSize;
+  if (!CreateWellKnownSid(WinBuiltinAdministratorsSid, nullptr, sidAdmin,
+                          &cbSid)) {
+    return false;
+  }
+
+  wil::unique_handle token;
+  union {
+    TOKEN_USER tokenUser;
+    char cdata[SidSize];
+  };
+  DWORD length;
+  if (!OpenProcessToken(GetCurrentProcess(), READ_CONTROL | TOKEN_READ,
+                        &token)) {
+    log::debug("OpenProcessToken failed.");
+    return false;
+  }
+  if (!GetTokenInformation(
+    token.get(), TokenUser, reinterpret_cast<LPVOID>(&tokenUser),
+    SidSize, &length
+  )) {
+    log::debug("GetTokenInformation failed: (0x{:X}): {}.",
+               GetLastError(), lastErrorString());
+    return false;
+  }
+  sidUser = tokenUser.User.Sid;
+
+  bool foundSystem = false, foundAdmin = false, foundUser = false;
+  for (DWORD i = 0; i < dacl->AceCount; ++i) {
+    void *pvAce;
+    if (!GetAce(dacl, i, &pvAce)) {
+      return false;
+    }
+    auto *ace = static_cast<ACCESS_ALLOWED_ACE *>(pvAce);
+    if (ace->Header.AceType == ACCESS_ALLOWED_ACE_TYPE) {
+      if ((ace->Mask & (FILE_READ_DATA | FILE_WRITE_DATA)) !=
+          (FILE_READ_DATA | FILE_WRITE_DATA)) {
+        return false;
+      }
+      auto *pSid = static_cast<PSID>(&ace->SidStart);
+      if (EqualSid(pSid, sidSystem)) {
+        foundSystem = true;
+        log::debug(L"Found system SID.");
+      } else if (EqualSid(pSid, sidAdmin)) {
+        foundAdmin = true;
+        log::debug(L"Found admin SID.");
+      } else if (EqualSid(pSid, sidUser)) {
+        foundUser = true;
+        log::debug(L"Found user SID.");
+      } else {
+        log::error(L"Unexpected security entry for file \"{}\".", filename);
+        return false;
+      }
+    } else {
+      return false;
+    }
+  }
+
+  return foundSystem && foundAdmin && foundUser;
+}
+
 std::string
 Client::readPrivateFile(std::wstring_view name, bool create) const {
   auto path = getUserDirectoryFileName(name);
   log::trace(L"Reading private file \"{}\".", path);
+
+  if (!checkPrivateFliePermissions(path)) {
+    log::error(L"File \"{}\" has invalid permissions.", name);
+    THROW_LAST_ERROR();
+  }
 
   DWORD openMode = create ? OPEN_ALWAYS : OPEN_EXISTING;
   SECURITY_ATTRIBUTES sec;
@@ -90,10 +179,11 @@ Client::readPrivateFile(std::wstring_view name, bool create) const {
   sec.lpSecurityDescriptor = nullptr;
   sec.bInheritHandle = false;
   wil::unique_hfile file{
-    CreateFile(path.c_str(), GENERIC_READ | READ_CONTROL, 0, &sec, openMode,
+    CreateFile(path.c_str(), GENERIC_READ, 0, &sec, openMode,
                FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, nullptr)
   };
   THROW_LAST_ERROR_IF(file.get() == INVALID_HANDLE_VALUE);
+
   // TODO: Verify that this file is only accessible by its owner.
 
   std::string text;
