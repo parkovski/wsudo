@@ -24,20 +24,18 @@ Make sure your `VCPKG_ROOT` points to a valid location, and then do:
 ```
 
 This will produce three binaries in `build\bin`. From an elevated shell, run
-`./TokenServer.exe install && sc start wsudo`. Note that this creates a group
-called `wsudoers` and when I eventually get around to it, the service will give
-permission to this group allowing members to start it without admin privileges.
-In this way, `wsudo.exe` will be able to start the service on demand. Currently
-though the group does nothing, so don't worry about it.
+`./TokenServer.exe install && net localgroup wsudoers <username> /add`. Then
+log out and log in to refresh your groups.
 
-After the service is started, from a non-elevated shell run `wsudo
-whatever-you-want`. It will ask for your password, after which you have a 5
-minute window of no repeat password prompts. This window is reset each time you
-run `wsudo`. After 5 minutes of inactivity your session times out and you will
-have to enter your password again.
+Now you can run `wsudo whatever-you-want`. It will ask for your password, after
+which you have a 5 minute window of no repeat password prompts. This window is
+reset each time you run `wsudo`. After 5 minutes of inactivity your session
+times out and you will have to enter your password again.
 
-Note that most of the command line options for `wsudo.exe` are not implemented
-yet.
+You can symlink to `wsudo.exe`, but it must live in the same directory as
+`wsudo-shim.exe`. Some programs work without the shim, but some don't, so the
+default is to use it always. Note that most of the command line options for
+`wsudo.exe` are not implemented yet.
 
 ## How does it work?
 There are three ways to create an elevated process:
@@ -57,8 +55,8 @@ PEB. With this method, the system sets up all the inheritance correctly, and
 we only need one undocumented call to elevate the process.
 
 ## What features are missing?
-Most of them. Here are the big ones:
-- Expiring the user's session after some amount of time.
+wsudo is coming along quickly, but some features are still missing. Here are
+the big ones:
 - Create some type of "sudoers" config file or registry key and enforce
     permissions.
 - Improve error handling and write tests.
