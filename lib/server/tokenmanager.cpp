@@ -2,6 +2,7 @@
 #include "wsudo/wsudo.h"
 #include <AclAPI.h>
 #include "wsudo/tokenmanager.h"
+#include "wsudo/server.h"
 
 using namespace wsudo;
 
@@ -22,6 +23,10 @@ bool TokenManager::ScopedSecurityPrivilege::setPrivilege(
                GetLastError(), lastErrorWString());
     return false;
   }
+  if (GetLastError() == ERROR_NOT_ALL_ASSIGNED) {
+    log::error(L"Failed to enable {}.", privilege);
+    return false;
+  }
   log::debug(L"{} {}.", privilege, enabled ? L"enabled" : L"disabled");
   return true;
 }
@@ -29,10 +34,11 @@ bool TokenManager::ScopedSecurityPrivilege::setPrivilege(
 bool TokenManager::ScopedSecurityPrivilege::setPrivilegeState(bool enabled)
   noexcept
 {
-  bool success =
-    setPrivilege(SE_SECURITY_NAME, enabled)
-    && setPrivilege(SE_ASSIGNPRIMARYTOKEN_NAME, enabled);
-  ok = enabled;
+  bool success = setPrivilege(SE_SECURITY_NAME, enabled);
+  if (system) {
+    success &= setPrivilege(SE_ASSIGNPRIMARYTOKEN_NAME, enabled);
+  }
+  ok = success;
   return success;
 }
 
@@ -120,7 +126,7 @@ bool TokenManager::createLaunchToken(HANDLE baseToken) {
 
 TokenManager::TokenManager(DWORD clientProcessId)
   : _serverToken{getServerToken()}
-  , _setSecurityPrivilege{*this}
+  , _setSecurityPrivilege{*this, g_isService}
   , _clientProcess{getClientProcess(clientProcessId)}
 {}
 

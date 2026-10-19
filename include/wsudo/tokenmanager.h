@@ -24,15 +24,20 @@ namespace wsudo {
 class TokenManager {
   class ScopedSecurityPrivilege {
     TokenManager *tm;
+    bool system;
     bool ok;
 
     bool setPrivilege(const wchar_t *privilege, bool enabled) noexcept;
     bool setPrivilegeState(bool enabled) noexcept;
 
   public:
-    explicit ScopedSecurityPrivilege(TokenManager &tm) noexcept : tm{&tm} {
+    explicit ScopedSecurityPrivilege(TokenManager &tm, bool system) noexcept
+      : tm{&tm}
+      , system{system}
+    {
       setPrivilegeState(true);
     }
+
     ~ScopedSecurityPrivilege() {
       setPrivilegeState(false);
     }
