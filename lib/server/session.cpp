@@ -78,6 +78,7 @@ static void CALLBACK timerRoutineTimeout(LPVOID data_, BOOLEAN) {
   if (sessionManager->hasSession()) {
     return;
   }
+  log::debug("No-session timeout elapsed, quitting.");
   sessionManager->quit();
 }
 

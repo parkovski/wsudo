@@ -99,9 +99,11 @@ bool Client::checkPrivateFliePermissions(const std::wstring &filename) const {
     delete[] reinterpret_cast<char *>(sidSystem);
     delete[] reinterpret_cast<char *>(sidAdmin);
   };
+
   if (!CreateWellKnownSid(WinLocalSystemSid, nullptr, sidSystem, &cbSid)) {
     return false;
   }
+
   cbSid = SidSize;
   if (!CreateWellKnownSid(WinBuiltinAdministratorsSid, nullptr, sidAdmin,
                           &cbSid)) {
@@ -209,11 +211,75 @@ void Client::writePrivateFile(std::wstring_view name, std::string_view text)
   auto path = getUserDirectoryFileName(name);
   log::trace(L"Writing private file \"{}\".", path);
 
+  constexpr DWORD SidSize = 256;
+  PACL dacl;
+  PSID sidSystem{new char[SidSize]}, sidAdmin{new char[SidSize]}, sidUser;
+  DWORD cbSid = SidSize;
+  EXPLICIT_ACCESS ea[3];
+  WSUDO_SCOPE_EXIT {
+    delete[] reinterpret_cast<char *>(sidSystem);
+    delete[] reinterpret_cast<char *>(sidAdmin);
+  };
+
+  if (!CreateWellKnownSid(WinLocalSystemSid, nullptr, sidSystem, &cbSid)) {
+    THROW_LAST_ERROR();
+  }
+  cbSid = SidSize;
+  if (!CreateWellKnownSid(WinBuiltinAdministratorsSid, nullptr, sidAdmin,
+                          &cbSid)) {
+    THROW_LAST_ERROR();
+  }
+
+  wil::unique_handle token;
+  union {
+    TOKEN_USER tokenUser;
+    char cdata[SidSize];
+  };
+  DWORD length;
+  if (!OpenProcessToken(GetCurrentProcess(), READ_CONTROL | TOKEN_READ,
+                        &token)) {
+    log::debug("OpenProcessToken failed.");
+    THROW_LAST_ERROR();
+  }
+  if (!GetTokenInformation(
+    token.get(), TokenUser, reinterpret_cast<LPVOID>(&tokenUser),
+    SidSize, &length
+  )) {
+    log::debug("GetTokenInformation failed: (0x{:X}): {}.",
+               GetLastError(), lastErrorString());
+    THROW_LAST_ERROR();
+  }
+  sidUser = tokenUser.User.Sid;
+
+  ea[0].Trustee.ptstrName = (LPTSTR)sidSystem;
+  ea[0].Trustee.TrusteeType = TRUSTEE_IS_USER;
+  ea[1].Trustee.ptstrName = (LPTSTR)sidAdmin;
+  ea[1].Trustee.TrusteeType = TRUSTEE_IS_WELL_KNOWN_GROUP;
+  ea[2].Trustee.ptstrName = (LPTSTR)sidUser;
+  ea[2].Trustee.TrusteeType = TRUSTEE_IS_USER;
+  for (int i = 0; i < 3; ++i) {
+    ea[i].grfAccessPermissions = GENERIC_ALL;
+    ea[i].grfAccessMode = SET_ACCESS;
+    ea[i].grfInheritance = NO_INHERITANCE;
+    ea[i].Trustee.TrusteeForm = TRUSTEE_IS_SID;
+    ea[i].Trustee.MultipleTrusteeOperation = NO_MULTIPLE_TRUSTEE;
+    ea[i].Trustee.pMultipleTrustee = nullptr;
+  }
+
+  if (SetEntriesInAcl(WSUDO_ARRAYSIZE(ea), ea, nullptr, &dacl)
+      != ERROR_SUCCESS) {
+    THROW_LAST_ERROR();
+  }
+  WSUDO_SCOPE_EXIT { LocalFree(dacl); };
+
   wil::unique_hfile file{
     CreateFile(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS,
                FILE_ATTRIBUTE_NORMAL, nullptr)
   };
   THROW_LAST_ERROR_IF(file.get() == INVALID_HANDLE_VALUE);
+
+  SetSecurityInfo(file.get(), SE_FILE_OBJECT, DACL_SECURITY_INFORMATION,
+                  nullptr, nullptr, dacl, nullptr);
 
   DWORD bytesWritten, totalBytesWritten = 0;
   while (totalBytesWritten < text.length()) {
