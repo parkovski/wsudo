@@ -92,14 +92,14 @@ private:
 
   bool validateCredentials(std::string &password);
 
-  bool bless(HANDLE process);
+  bool bless(HANDLE process, bool runAsSystem);
 
   int resume(PROCESS_INFORMATION &pi, bool wait);
 
 public:
   explicit Client(const std::wstring &pipeName);
 
-  int operator()(std::wstring &commandLine, bool wait);
+  int operator()(Options &options);
 };
 
 } // namespace wsudo

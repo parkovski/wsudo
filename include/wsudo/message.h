@@ -148,10 +148,12 @@ namespace wsudo::msg {
 
     std::string_view key;
     void *hRemoteProcess;
+    bool useSystem;
 
-    constexpr explicit Bless(std::string_view key, void *hRemoteProcess)
+    constexpr explicit Bless(std::string_view key, void *hRemoteProcess,
+                             bool useSystem = false)
       noexcept
-      : key{key}, hRemoteProcess{hRemoteProcess}
+      : key{key}, hRemoteProcess{hRemoteProcess}, useSystem{useSystem}
     {}
 
     static bool parse(Message &m, std::string_view buffer) noexcept;

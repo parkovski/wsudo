@@ -208,18 +208,25 @@ bool Bless::parse(Message &m, std::string_view buffer) noexcept {
   for (; i < buffer.length(); ++i) {
     if (buffer[i] == '\0') {
       key = buffer.substr(0, i);
+      ++i;
       break;
     }
   }
 
-  if (buffer.length() - i - 1 != sizeof(void *)) {
+  if (buffer.length() - i < sizeof(void *)) {
     return false;
   }
 
   void *process;
-  memcpy(&process, buffer.data() + i + 1, sizeof(void *));
+  memcpy(&process, buffer.data() + i, sizeof(void *));
 
-  m = Bless{key, process};
+  i += sizeof(void *);
+  bool useSystem = false;
+  if (buffer.length() > i) {
+    useSystem = buffer[i] != 0;
+  }
+
+  m = Bless{key, process, useSystem};
   return true;
 }
 
@@ -229,6 +236,9 @@ void Bless::serialize(std::string &buffer) const {
     reinterpret_cast<const char *>(&hRemoteProcess), sizeof(void *)
   };
   buffer.append(process);
+  if (useSystem) {
+    buffer.push_back((char)1);
+  }
 }
 
 namespace {

@@ -22,7 +22,7 @@ static void showHelp() {
              " service\n");
   log::print("  --detach                    don't wait for the child process "
              "to finish - this may break console apps\n");
-  log::print("  --system                    run as NT AUTHORITY\\System\n");
+  log::print("  -S, --system                run as NT AUTHORITY\\System\n");
 }
 
 static bool startService() {
@@ -142,5 +142,5 @@ int wmain(int argc, wchar_t *argv[]) {
   WSUDO_SCOPE_EXIT { client.~Client(); };
   log::debug("Client initialized");
 
-  return client(opts.commandLine, !opts.detach);
+  return client(opts);
 }

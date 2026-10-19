@@ -104,7 +104,7 @@ bool Client::Options::parse(int argc, const wchar_t *const *argv) noexcept {
         useShim = false;
       } else if (arg == L"--detach") {
         detach = true;
-      } else if (arg == L"--system") {
+      } else if (arg == L"-S" || arg == L"--system") {
         runAsSystem = true;
       }
     } else {

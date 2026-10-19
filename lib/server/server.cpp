@@ -145,9 +145,11 @@ wscoro::task<> Server::dispatch(Connection &conn) {
       auto handle = bless.hRemoteProcess;
       TokenManager tm{clientPid};
       bool tokenSuccess;
-      if (g_isService) {
+      if (g_isService && !bless.useSystem) {
+        log::debug("Creating client launch token.");
         tokenSuccess = tm.createClientLaunchToken();
       } else {
+        log::debug("Creating server launch token.");
         tokenSuccess = tm.createServerLaunchToken();
       }
       if (tokenSuccess && tm.applyToken(handle)) {

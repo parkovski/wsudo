@@ -416,7 +416,7 @@ bool Client::validateCredentials(std::string &password) {
   return false;
 }
 
-bool Client::bless(HANDLE process) {
+bool Client::bless(HANDLE process, bool runAsSystem) {
   Message res;
 
   if (_key.empty()) {
@@ -425,7 +425,7 @@ bool Client::bless(HANDLE process) {
   }
 
   try {
-    _conn.send(msg::Bless{_key, process});
+    _conn.send(msg::Bless{_key, process, runAsSystem});
     res = _conn.recv();
   } catch (wil::ResultException &e) {
     log::error(
@@ -478,8 +478,8 @@ Client::Client(const std::wstring &pipeName)
   }
 }
 
-int Client::operator()(std::wstring &commandLine, bool wait) {
-  if (commandLine.empty()) {
+int Client::operator()(Options &options) {
+  if (options.commandLine.empty()) {
     return ERROR_FILE_NOT_FOUND;
   }
 
@@ -496,7 +496,7 @@ int Client::operator()(std::wstring &commandLine, bool wait) {
 
   PROCESS_INFORMATION pi{};
   try {
-    pi = createSuspendedProcess(commandLine);
+    pi = createSuspendedProcess(options.commandLine);
   } catch (wil::ResultException &) {
     return ERROR_CHILD_PROCESS_BLOCKED;
   }
@@ -505,7 +505,7 @@ int Client::operator()(std::wstring &commandLine, bool wait) {
     CloseHandle(pi.hProcess);
   };
 
-  if (!bless(pi.hProcess)) {
+  if (!bless(pi.hProcess, options.runAsSystem)) {
     TerminateProcess(pi.hProcess, (UINT)(-1));
     return ERROR_ACCESS_DENIED;
   }
@@ -513,5 +513,5 @@ int Client::operator()(std::wstring &commandLine, bool wait) {
   _conn.disconnect();
 
   log::debug("Resuming process {}.", pi.hProcess);
-  return resume(pi, wait);
+  return resume(pi, !options.detach);
 }
