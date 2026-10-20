@@ -30,9 +30,10 @@ int wmain(int argc, wchar_t *argv[]) {
   PROCESS_INFORMATION pi{};
   if (!CreateProcessW(
     nullptr, commandLine.data(), nullptr, nullptr, true,
-    CREATE_UNICODE_ENVIRONMENT, nullptr, nullptr, &si, &pi
+    CREATE_UNICODE_ENVIRONMENT | CREATE_NEW_PROCESS_GROUP
+    | CREATE_PRESERVE_CODE_AUTHZ_LEVEL, nullptr, nullptr, &si, &pi
   )) {
-    return ERROR_CREATE_FAILED;
+    return GetLastError();
   }
   WaitForSingleObject(pi.hProcess, INFINITE);
   DWORD exitCode;

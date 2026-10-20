@@ -80,13 +80,16 @@ std::wstring Client::getUserDirectoryFileName(std::wstring_view filename)
   return path;
 }
 
-bool Client::checkPrivateFliePermissions(const std::wstring &filename) const {
+bool Client::checkPrivateFliePermissions(HANDLE file,
+                                         std::wstring_view filename) const {
   log::debug(L"Checking permissions on \"{}\".", filename);
   PSECURITY_DESCRIPTOR secDesc;
   PACL dacl;
-  if (GetNamedSecurityInfo(
-    filename.c_str(), SE_FILE_OBJECT, DACL_SECURITY_INFORMATION,
-    nullptr, nullptr, &dacl, nullptr, &secDesc
+  PSID owner;
+  if (GetSecurityInfo(
+    file, SE_FILE_OBJECT,
+    DACL_SECURITY_INFORMATION | OWNER_SECURITY_INFORMATION,
+    &owner, nullptr, &dacl, nullptr, &secDesc
   ) != ERROR_SUCCESS) {
     return false;
   }
@@ -118,18 +121,23 @@ bool Client::checkPrivateFliePermissions(const std::wstring &filename) const {
   DWORD length;
   if (!OpenProcessToken(GetCurrentProcess(), READ_CONTROL | TOKEN_READ,
                         &token)) {
-    log::debug("OpenProcessToken failed.");
+    log::error("Couldn't open current process token.");
     return false;
   }
   if (!GetTokenInformation(
     token.get(), TokenUser, reinterpret_cast<LPVOID>(&tokenUser),
     SidSize, &length
   )) {
-    log::debug("GetTokenInformation failed: (0x{:X}): {}.",
+    log::debug("Couldn't get process token information: (0x{:X}): {}.",
                GetLastError(), lastErrorString());
     return false;
   }
   sidUser = tokenUser.User.Sid;
+
+  if (!EqualSid(owner, sidUser)) {
+    log::error(L"File \"{}\" is owned by another user.", filename);
+    return false;
+  }
 
   bool foundSystem = false, foundAdmin = false, foundUser = false;
   for (DWORD i = 0; i < dacl->AceCount; ++i) {
@@ -170,23 +178,24 @@ Client::readPrivateFile(std::wstring_view name, bool create) const {
   auto path = getUserDirectoryFileName(name);
   log::trace(L"Reading private file \"{}\".", path);
 
-  if (!checkPrivateFliePermissions(path)) {
-    log::error(L"File \"{}\" has invalid permissions.", name);
-    THROW_LAST_ERROR();
-  }
-
   DWORD openMode = create ? OPEN_ALWAYS : OPEN_EXISTING;
   SECURITY_ATTRIBUTES sec;
   sec.nLength = sizeof(SECURITY_ATTRIBUTES);
   sec.lpSecurityDescriptor = nullptr;
   sec.bInheritHandle = false;
   wil::unique_hfile file{
-    CreateFile(path.c_str(), GENERIC_READ, 0, &sec, openMode,
+    CreateFile(path.c_str(), GENERIC_READ | READ_CONTROL, 0, &sec, openMode,
                FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, nullptr)
   };
   THROW_LAST_ERROR_IF(file.get() == INVALID_HANDLE_VALUE);
 
-  // TODO: Verify that this file is only accessible by its owner.
+  if (!checkPrivateFliePermissions(file.get(), name)) {
+    auto err = GetLastError();
+    if (!DeleteFile(std::wstring{name}.c_str())) {
+      err = GetLastError();
+    }
+    THROW_WIN32(err);
+  }
 
   std::string text;
   DWORD fileSize = GetFileSize(file.get(), nullptr);
@@ -211,75 +220,11 @@ void Client::writePrivateFile(std::wstring_view name, std::string_view text)
   auto path = getUserDirectoryFileName(name);
   log::trace(L"Writing private file \"{}\".", path);
 
-  constexpr DWORD SidSize = 256;
-  PACL dacl;
-  PSID sidSystem{new char[SidSize]}, sidAdmin{new char[SidSize]}, sidUser;
-  DWORD cbSid = SidSize;
-  EXPLICIT_ACCESS ea[3];
-  WSUDO_SCOPE_EXIT {
-    delete[] reinterpret_cast<char *>(sidSystem);
-    delete[] reinterpret_cast<char *>(sidAdmin);
-  };
-
-  if (!CreateWellKnownSid(WinLocalSystemSid, nullptr, sidSystem, &cbSid)) {
-    THROW_LAST_ERROR();
-  }
-  cbSid = SidSize;
-  if (!CreateWellKnownSid(WinBuiltinAdministratorsSid, nullptr, sidAdmin,
-                          &cbSid)) {
-    THROW_LAST_ERROR();
-  }
-
-  wil::unique_handle token;
-  union {
-    TOKEN_USER tokenUser;
-    char cdata[SidSize];
-  };
-  DWORD length;
-  if (!OpenProcessToken(GetCurrentProcess(), READ_CONTROL | TOKEN_READ,
-                        &token)) {
-    log::debug("OpenProcessToken failed.");
-    THROW_LAST_ERROR();
-  }
-  if (!GetTokenInformation(
-    token.get(), TokenUser, reinterpret_cast<LPVOID>(&tokenUser),
-    SidSize, &length
-  )) {
-    log::debug("GetTokenInformation failed: (0x{:X}): {}.",
-               GetLastError(), lastErrorString());
-    THROW_LAST_ERROR();
-  }
-  sidUser = tokenUser.User.Sid;
-
-  ea[0].Trustee.ptstrName = (LPTSTR)sidSystem;
-  ea[0].Trustee.TrusteeType = TRUSTEE_IS_USER;
-  ea[1].Trustee.ptstrName = (LPTSTR)sidAdmin;
-  ea[1].Trustee.TrusteeType = TRUSTEE_IS_WELL_KNOWN_GROUP;
-  ea[2].Trustee.ptstrName = (LPTSTR)sidUser;
-  ea[2].Trustee.TrusteeType = TRUSTEE_IS_USER;
-  for (int i = 0; i < 3; ++i) {
-    ea[i].grfAccessPermissions = GENERIC_ALL;
-    ea[i].grfAccessMode = SET_ACCESS;
-    ea[i].grfInheritance = NO_INHERITANCE;
-    ea[i].Trustee.TrusteeForm = TRUSTEE_IS_SID;
-    ea[i].Trustee.MultipleTrusteeOperation = NO_MULTIPLE_TRUSTEE;
-    ea[i].Trustee.pMultipleTrustee = nullptr;
-  }
-
-  if (SetEntriesInAcl(WSUDO_ARRAYSIZE(ea), ea, nullptr, &dacl)
-      != ERROR_SUCCESS) {
-    THROW_LAST_ERROR();
-  }
-  WSUDO_SCOPE_EXIT { LocalFree(dacl); };
-
   wil::unique_hfile file{
     CreateFile(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS,
                FILE_ATTRIBUTE_NORMAL, nullptr)
   };
   THROW_LAST_ERROR_IF(file.get() == INVALID_HANDLE_VALUE);
-
-  SetSecurityInfo(file.get(), SE_FILE_OBJECT, DACL_SECURITY_INFORMATION,
-                  nullptr, nullptr, dacl, nullptr);
 
   DWORD bytesWritten, totalBytesWritten = 0;
   while (totalBytesWritten < text.length()) {
