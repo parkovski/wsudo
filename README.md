@@ -34,8 +34,10 @@ times out and you will have to enter your password again.
 
 You can symlink to `wsudo.exe`, but it must live in the same directory as
 `wsudo-shim.exe`. Some programs work without the shim, but some don't, so the
-default is to use it always. Note that most of the command line options for
-`wsudo.exe` are not implemented yet.
+default is to use it always. Note that PowerShell 7, at least the store
+version, won't run as system with the shim so you will need the `--no-shim`
+option to run it. I don't think there's a way around this because it also can't
+be launched from a system cmd.
 
 ## How does it work?
 There are three ways to create an elevated process:
