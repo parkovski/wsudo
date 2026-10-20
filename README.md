@@ -31,12 +31,12 @@ which you have a 5 minute window of no repeat password prompts. This window is
 reset each time you run `wsudo`. After 5 minutes of inactivity your session
 times out and you will have to enter your password again.
 
-You can symlink to `wsudo.exe`, but it must live in the same directory as
-`wsudo-shim.exe`. Some programs work without the shim, but some don't, so the
-default is to use it always. Note that PowerShell 7, at least the store
-version, won't run as system with the shim so you will need the `--no-shim`
-option to run it. I don't think there's a way around this because it also can't
-be launched from a system cmd.
+You can symlink to `wsudo.exe`, but the program itself (not the symlink) must
+live in the same directory as `wsudo-shim.exe`. Some programs work without the
+shim, but some don't, so the default is to use it always. Note that PowerShell
+7, at least the store version, won't run as system with the shim so you will
+need the `--no-shim` option to run it. I don't think there's a way around this
+because it also can't be launched from a system cmd.
 
 ## How does it work?
 There are three ways to create an elevated process:
