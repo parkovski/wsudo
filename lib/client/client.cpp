@@ -268,7 +268,7 @@ bool Client::readConsolePassword(std::string &password) const {
       if (wpassword.length() > 1) {
         auto lo = *(wpassword.cend() - 1);
         auto hi = *(wpassword.cend() - 2);
-        if (lo >= 0xD800 && lo <= 0xDBFF && hi >= 0xDC00 && hi < 0xDFFF) {
+        if (lo >= 0xD800 && lo <= 0xDBFF && hi >= 0xDC00 && hi <= 0xDFFF) {
           // Surrogate pair.
           wpassword.erase(wpassword.cend() - 2);
         } else {
