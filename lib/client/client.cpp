@@ -292,7 +292,8 @@ bool Client::readConsolePassword(std::string &password) const {
 }
 
 PROCESS_INFORMATION
-Client::createSuspendedProcess(std::wstring &commandLine) {
+Client::createSuspendedProcess(std::wstring &commandLine,
+                               bool useNewEnvironment) {
   STARTUPINFOW si{};
   si.cb = sizeof(STARTUPINFOW);
   si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
@@ -300,12 +301,23 @@ Client::createSuspendedProcess(std::wstring &commandLine) {
   si.hStdError = GetStdHandle(STD_ERROR_HANDLE);
   si.dwFlags = STARTF_USESTDHANDLES;
   PROCESS_INFORMATION pi{};
+  void *env = nullptr;
+  if (useNewEnvironment) {
+    wil::unique_handle token;
+    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY | TOKEN_DUPLICATE,
+                          token.put())) {
+      THROW_LAST_ERROR();
+    }
+    log::debug("Creating new environment block.");
+    CreateEnvironmentBlock(&env, token.get(), false);
+  }
+  WSUDO_SCOPE_EXIT { if (env) DestroyEnvironmentBlock(env); };
   // The system is allowed to modify this string, so we can't use c_str as it
   // returns a const pointer.
   commandLine.push_back(L'\0');
   if (!CreateProcess(nullptr, commandLine.data(), nullptr, nullptr, true,
                      CREATE_UNICODE_ENVIRONMENT | CREATE_SUSPENDED,
-                     nullptr, nullptr, &si, &pi)) {
+                     env, nullptr, &si, &pi)) {
     log::error("Process creation failed.");
     THROW_LAST_ERROR();
   }
@@ -441,7 +453,7 @@ int Client::operator()(Options &options) {
 
   PROCESS_INFORMATION pi{};
   try {
-    pi = createSuspendedProcess(options.commandLine);
+    pi = createSuspendedProcess(options.commandLine, !options.keepEnvironment);
   } catch (wil::ResultException &) {
     return ERROR_CHILD_PROCESS_BLOCKED;
   }

@@ -87,7 +87,8 @@ private:
   // reading was interrupted (e.g. by Ctrl-C).
   bool readConsolePassword(std::string &password) const;
 
-  PROCESS_INFORMATION createSuspendedProcess(std::wstring &commandLine);
+  PROCESS_INFORMATION createSuspendedProcess(std::wstring &commandLine,
+                                             bool useNewEnvironment);
 
   bool userHasActiveSession();
 
