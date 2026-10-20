@@ -345,7 +345,7 @@ bool Client::validateCredentials(std::string &password) {
   }
   if (std::holds_alternative<msg::Success>(res)) {
     log::warn("Credential validation returned success but a session key is needed.");
-    return true;
+    return false;
   } else if (std::holds_alternative<msg::InitSession>(res)) {
     try {
       log::trace("Initializing new session.");
