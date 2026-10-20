@@ -1,14 +1,13 @@
 # `wsudo`: UAC-less sudo for Windows
 
 ## Why another sudo for Windows?
-Every other sudo project I've seen requires at least one UAC prompt. I haven't
-tried the official one from Microsoft, but it appears to be abandoned. This
-sudo runs a system service to assign new tokens to a process and therefore you
-never see a UAC prompt. Seriously. Never.
+Every other sudo project I've seen requires at least one UAC prompt. This sudo
+runs a system service to assign new tokens to a process and therefore you never
+see a UAC prompt. Seriously. Never.
 
-## ⚠ Not production ready!
-This project is in the very early stages. It may have bugs and security holes.
-Use at your own risk! That said, I am using this regularly and it works for me.
+## ⚠ Use at your own risk
+This project is in the early stages. It may have bugs and security holes. That
+said, I am using this regularly and it works for me.
 
 ## How to build/run?
 This project relies on another of my projects,
@@ -69,6 +68,7 @@ the big ones:
     is a big maybe.
 - PowerShell wrapper cmdlets.
 - Integration with WSL sudo.
+- Windows Hello authentication.
 
 ## Why the GPL?
 I believe that security software should be open and auditable. If I went with
