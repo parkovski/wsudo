@@ -129,7 +129,8 @@ wscoro::task<> Server::dispatch(Connection &conn) {
     if (std::holds_alternative<msg::QuerySession>(message)) {
       auto &qs = std::get<msg::QuerySession>(message);
       auto session = _sessionManager.find(qs.key);
-      if (!session) {
+      if (!session || to_utf16(qs.domain) != session->domain()
+          || to_utf16(qs.username) != session->username()) {
         co_await conn.send(msg::Failure{});
       } else {
         co_await conn.send(msg::Success{});

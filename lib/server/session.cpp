@@ -10,11 +10,11 @@
 
 using namespace wsudo;
 
-static void CALLBACK timerRoutine(LPVOID data_, BOOLEAN) {
-  auto *data = static_cast<SessionTimerData *>(data_);
-  log::trace(L"Timer triggered for {}\\{}", data->session->domain(),
-             data->session->username());
-  data->sessionManager->expire(data->session.get());
+static void CALLBACK timerRoutine(LPVOID data, BOOLEAN) {
+  auto session = *static_cast<std::shared_ptr<Session> *>(data);
+  log::trace(L"Timer triggered for {}\\{}", session->domain(),
+             session->username());
+  session->manager().expire(session.get());
 }
 
 Session::Session(SessionManager &sessionManager, std::wstring domain,
@@ -25,7 +25,7 @@ Session::Session(SessionManager &sessionManager, std::wstring domain,
   , _username{std::move(username)}
   , _key{sessionManager.makeKey()}
   , _timer{nullptr}
-  , _timerData{nullptr}
+  , _self{nullptr}
   , _ttlExpiresSeconds{ttlSeconds}
 {
   WSUDO_SCOPE_EXIT { password.assign(password.length(), L'\0'); };
@@ -39,10 +39,7 @@ Session::Session(SessionManager &sessionManager, std::wstring domain,
 }
 
 Session::~Session() {
-  expire();
-  if (_timerData) {
-    delete _timerData;
-  }
+  log::debug(L"Session::~Session: {}", _username);
 }
 
 void Session::expire() {
@@ -52,19 +49,20 @@ void Session::expire() {
     std::atomic_thread_fence(std::memory_order_seq_cst); // Is this necessary?
     DeleteTimerQueueTimer(_sessionManager->timerQueue(), timer, nullptr);
   }
+  _self = nullptr;
   log::trace(L"Session for {}\\{} expired.", _domain, _username);
 }
 
 void Session::refresh(std::shared_ptr<Session> session) {
-  if (!_timerData) {
-    _timerData = new SessionTimerData{session, _sessionManager};
+  if (!_self) {
+    _self = session;
   }
   if (_timer) {
     ChangeTimerQueueTimer(_sessionManager->timerQueue(), _timer,
                           1000 * _ttlExpiresSeconds, 0);
   } else {
     CreateTimerQueueTimer(
-      &_timer, _sessionManager->timerQueue(), timerRoutine, _timerData,
+      &_timer, _sessionManager->timerQueue(), timerRoutine, &_self,
       1000 * _ttlExpiresSeconds, 0,
       WT_EXECUTEINTIMERTHREAD | WT_EXECUTEONLYONCE
     );
@@ -73,8 +71,8 @@ void Session::refresh(std::shared_ptr<Session> session) {
              _domain, _username, _ttlExpiresSeconds);
 }
 
-static void CALLBACK timerRoutineTimeout(LPVOID data_, BOOLEAN) {
-  auto *sessionManager = static_cast<SessionManager *>(data_);
+static void CALLBACK timerRoutineTimeout(LPVOID data, BOOLEAN) {
+  auto *sessionManager = static_cast<SessionManager *>(data);
   if (sessionManager->hasSession()) {
     return;
   }

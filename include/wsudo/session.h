@@ -21,11 +21,6 @@ class Session;
 class SessionManager;
 class Server;
 
-struct SessionTimerData {
-  std::shared_ptr<Session> session;
-  SessionManager *sessionManager;
-};
-
 class Session {
 public:
   explicit Session(SessionManager &manager, std::wstring domain,
@@ -62,6 +57,8 @@ public:
 
   void refresh(std::shared_ptr<Session> session);
 
+  SessionManager &manager() { return *_sessionManager; }
+
 private:
   SessionManager *_sessionManager;
   const std::wstring _domain;
@@ -70,7 +67,7 @@ private:
   wil::unique_handle _token;
   wil::unique_sid _pSid;
   HANDLE _timer;
-  SessionTimerData *_timerData;
+  std::shared_ptr<Session> _self;
   // The time when this session expires if left untouched.
   unsigned _ttlExpiresSeconds;
 };
