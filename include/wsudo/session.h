@@ -87,8 +87,8 @@ class SessionManager {
   static constexpr unsigned KeyLength = 64;
 
 public:
-  explicit SessionManager(Server *server, unsigned defaultTtlSeconds = 0)
-                          noexcept;
+  explicit SessionManager(Server *server, unsigned waitTimeoutSeconds,
+                          unsigned sessionTimeoutSeconds) noexcept;
 
   SessionManager(const SessionManager &) = delete;
   SessionManager &operator=(const SessionManager &) = delete;

@@ -80,18 +80,16 @@ static void CALLBACK timerRoutineTimeout(LPVOID data, BOOLEAN) {
   sessionManager->quit();
 }
 
-SessionManager::SessionManager(Server *server, unsigned defaultTtlSeconds)
-                               noexcept
+SessionManager::SessionManager(Server *server, unsigned waitTimeoutSeconds,
+                               unsigned sessionTimeoutSeconds) noexcept
   : _server{server}
-  , _defaultTtlSeconds{
-    defaultTtlSeconds == 0
-      ? DefaultTtlSeconds
-      : defaultTtlSeconds
-  }
+  , _defaultTtlSeconds{waitTimeoutSeconds}
   , _timerQueue{CreateTimerQueue()}
   , _timeoutTimer{nullptr}
   , _localDomain{}
 {
+  log::debug("Waiting {} seconds for initial connection.", waitTimeoutSeconds);
+
   NTSTATUS status;
   LSA_OBJECT_ATTRIBUTES attr{};
   wil::unique_hlsa policy;
@@ -122,7 +120,7 @@ SessionManager::SessionManager(Server *server, unsigned defaultTtlSeconds)
 
   CreateTimerQueueTimer(
     &_timeoutTimer, _timerQueue, timerRoutineTimeout, this,
-    1000 * DefaultTimeoutSeconds, 0,
+    1000 * sessionTimeoutSeconds, 0,
     WT_EXECUTEINTIMERTHREAD | WT_EXECUTEONLYONCE
   );
 

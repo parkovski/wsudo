@@ -4,6 +4,7 @@
 #include "corio.h"
 #include "session.h"
 #include "message.h"
+#include "config.h"
 
 #include <string_view>
 
@@ -48,7 +49,7 @@ private:
   HANDLE initPipe(bool first = false);
 
 public:
-  explicit Server(std::wstring pipeName);
+  explicit Server(std::wstring pipeName, ServerConfig &config);
 
   int operator()(int nUserThreads = 0, int nSystemThreads = 0);
   void quit(int exitCode = 0);

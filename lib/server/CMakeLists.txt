@@ -1,4 +1,5 @@
 set(SOURCES
+  config.cpp
   connection.cpp
   install.cpp
   server.cpp

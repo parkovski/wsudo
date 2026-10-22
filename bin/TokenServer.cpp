@@ -1,6 +1,7 @@
 #include "wsudo/log.h"
 #include "wsudo/wsudo.h"
 #include "wsudo/server.h"
+#include "wsudo/config.h"
 
 #include <spdlog/common.h>
 #include <spdlog/spdlog.h>
@@ -133,7 +134,11 @@ VOID WINAPI serviceMain(DWORD argc, LPWSTR *argv) {
   SetServiceStatus(g_serviceStatusHandle, &g_serviceStatus);
   g_serviceStatus.dwWaitHint = 0;
 
-  Server server{PipeFullPath};
+  ServerConfig config;
+  if (!config.parse()) {
+    config.setDefaults();
+  }
+  Server server{PipeFullPath, config};
   g_server = &server;
 
   int exitCode = server(Server::UserThreads, Server::SystemThreads);
@@ -293,7 +298,11 @@ int wmain(int argc, wchar_t *argv[]) {
       log::info("Starting server. Press Ctrl-C to exit.");
     }
 
-    Server server{PipeFullPath};
+    ServerConfig config;
+    if (!config.parse()) {
+      config.setDefaults();
+    }
+    Server server{PipeFullPath, config};
     g_server = &server;
     return server(Server::UserThreads, Server::SystemThreads);
   } else {

@@ -80,9 +80,9 @@ HANDLE Server::initPipe(bool first) {
   return pipe;
 }
 
-Server::Server(std::wstring pipeName)
+Server::Server(std::wstring pipeName, ServerConfig &config)
   : _pipeName{std::move(pipeName)}
-  , _sessionManager{this}
+  , _sessionManager{this, config.waitTimeout, config.sessionTimeout}
 {}
 
 int Server::operator()(int nUserThreads, int nSystemThreads) {
