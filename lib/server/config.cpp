@@ -1,9 +1,11 @@
 #include "wsudo/wsudo.h"
 #include "wsudo/config.h"
+#include <AclAPI.h>
 #include <ShlObj.h>
 #include <Shlwapi.h>
 #include <cstdlib>
 #include <wil/resource.h>
+#include <winnt.h>
 
 using namespace wsudo;
 
@@ -53,15 +55,85 @@ bool ServerConfig::parse() noexcept {
   configPath.append(L"\\wsudo\\wsudo.conf");
 
   wil::unique_hfile file{CreateFile(
-    configPath.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
-    FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, nullptr
+    configPath.c_str(), GENERIC_READ | READ_CONTROL, FILE_SHARE_READ, nullptr,
+    OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, nullptr
   )};
   if (!file) {
     log::warn(L"Failed to open '{}'.", configPath);
     return false;
   }
 
-  // TODO: Check security on the file.
+  PSECURITY_DESCRIPTOR sd;
+  PACL dacl;
+  PSID owner;
+  if (GetSecurityInfo(
+    file.get(), SE_FILE_OBJECT,
+    DACL_SECURITY_INFORMATION | OWNER_SECURITY_INFORMATION,
+    &owner , nullptr, &dacl, nullptr , &sd
+  ) != ERROR_SUCCESS) {
+    log::error(L"Couldn't read security info on '{}'.", configPath);
+    return false;
+  }
+  WSUDO_SCOPE_EXIT { LocalFree(sd); };
+
+  constexpr DWORD SidSize = 256;
+  DWORD cbSid = SidSize;
+  PSID sidSystem{new char[SidSize]}, sidAdmin{new char[SidSize]};
+  WSUDO_SCOPE_EXIT {
+    delete[] reinterpret_cast<char *>(sidSystem);
+    delete[] reinterpret_cast<char *>(sidAdmin);
+  };
+
+  if (!CreateWellKnownSid(WinLocalSystemSid, nullptr, sidSystem, &cbSid)) {
+    return false;
+  }
+
+  cbSid = SidSize;
+  if (!CreateWellKnownSid(WinBuiltinAdministratorsSid, nullptr, sidAdmin,
+                          &cbSid)) {
+    return false;
+  }
+
+  if (!EqualSid(owner, sidAdmin)) {
+    log::error(L"'{}' is not owned by the Administrators group.", configPath);
+    return false;
+  }
+
+  bool foundSystem = false, foundAdmin = false;
+  for (DWORD i = 0; i < dacl->AceCount; ++i) {
+    void *pvAce;
+    if (!GetAce(dacl, i, &pvAce)) {
+      return false;
+    }
+
+    auto *ace = static_cast<ACCESS_ALLOWED_ACE *>(pvAce);
+    if (ace->Header.AceType != ACCESS_ALLOWED_ACE_TYPE) {
+      log::error(L"Bad ACE type on '{}'.", configPath);
+      return false;
+    }
+    auto *pSid = static_cast<PSID>(&ace->SidStart);
+    if (EqualSid(pSid, sidSystem)) {
+      foundSystem = true;
+    } else if (EqualSid(pSid, sidAdmin)) {
+      foundAdmin = true;
+    } else {
+      log::error(L"Only System and Administrators should have access to '{}'.",
+                 configPath);
+      return false;
+    }
+    if ((ace->Mask & (FILE_READ_DATA | FILE_WRITE_DATA))
+        != (FILE_READ_DATA | FILE_WRITE_DATA)) {
+      log::warn(L"No read/write access to '{}'.", configPath);
+      return false;
+    }
+  }
+
+  if (!foundSystem) {
+    log::warn(L"System should have access to '{}'.", configPath);
+  }
+  if (!foundAdmin) {
+    log::warn(L"Administrators should have access to '{}'.", configPath);
+  }
 
   DWORD size = GetFileSize(file.get(), nullptr), bytesRead;
   std::string buffer;
@@ -161,6 +233,8 @@ bool ServerConfig::parse() noexcept {
       break;
     }
   }
+
+  log::info(L"Processed '{}'.", configPath);
 
   return true;
 }

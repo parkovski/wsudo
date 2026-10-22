@@ -154,13 +154,13 @@ bool Client::checkPrivateFliePermissions(HANDLE file,
       auto *pSid = static_cast<PSID>(&ace->SidStart);
       if (EqualSid(pSid, sidSystem)) {
         foundSystem = true;
-        log::debug(L"Found system SID.");
+        log::trace(L"Found system SID.");
       } else if (EqualSid(pSid, sidAdmin)) {
         foundAdmin = true;
-        log::debug(L"Found admin SID.");
+        log::trace(L"Found admin SID.");
       } else if (EqualSid(pSid, sidUser)) {
         foundUser = true;
-        log::debug(L"Found user SID.");
+        log::trace(L"Found user SID.");
       } else {
         log::error(L"Unexpected security entry for file \"{}\".", filename);
         return false;
