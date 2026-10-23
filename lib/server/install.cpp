@@ -177,15 +177,17 @@ HRESULT wsudo::installService() {
     SECURITY_ATTRIBUTES sa;
     PSECURITY_DESCRIPTOR psd;
     PACL dacl;
-    PSID sidSystem, sidAdmin;
-    EXPLICIT_ACCESS ea[2];
+    PSID sidSystem, sidAdmin, sidAuthUsers;
+    EXPLICIT_ACCESS ea[3];
     constexpr DWORD SidSize = 256;
     DWORD cbSid;
     sidSystem = new char[SidSize];
     sidAdmin = new char[SidSize];
+    sidAuthUsers = new char[SidSize];
     WSUDO_SCOPE_EXIT {
       delete[] reinterpret_cast<char *>(sidSystem);
       delete[] reinterpret_cast<char *>(sidAdmin);
+      delete[] reinterpret_cast<char *>(sidAuthUsers);
     };
 
     cbSid = SidSize;
@@ -201,7 +203,14 @@ HRESULT wsudo::installService() {
       RETURN_LAST_ERROR();
     }
 
-    for (int i = 0; i < WSUDO_ARRAYSIZE(ea); ++i) {
+    cbSid = SidSize;
+    if (!CreateWellKnownSid(WinAuthenticatedUserSid, nullptr, sidAuthUsers,
+                            &cbSid)) {
+      log::error("Failed to look up authenticated users SID.");
+      RETURN_LAST_ERROR();
+    }
+
+    for (int i = 0; i < 2; ++i) {
       ea[i].grfAccessPermissions = FILE_ALL_ACCESS;
       ea[i].grfAccessMode = SET_ACCESS;
       ea[i].grfInheritance = SUB_CONTAINERS_AND_OBJECTS_INHERIT;
@@ -214,7 +223,18 @@ HRESULT wsudo::installService() {
     ea[1].Trustee.TrusteeType = TRUSTEE_IS_GROUP;
     ea[1].Trustee.ptstrName = (LPWCH)sidAdmin;
 
-    auto result = SetEntriesInAcl(2, ea, nullptr, &dacl);
+    ea[2].grfAccessPermissions =
+      FILE_TRAVERSE | FILE_READ_ATTRIBUTES | FILE_READ_EA
+      | STANDARD_RIGHTS_READ | FILE_EXECUTE | FILE_LIST_DIRECTORY;
+    ea[2].grfAccessMode = SET_ACCESS;
+    ea[2].grfInheritance = SUB_CONTAINERS_AND_OBJECTS_INHERIT;
+    ea[2].Trustee.pMultipleTrustee = nullptr;
+    ea[2].Trustee.MultipleTrusteeOperation = NO_MULTIPLE_TRUSTEE;
+    ea[2].Trustee.TrusteeForm = TRUSTEE_IS_SID;
+    ea[2].Trustee.TrusteeType = TRUSTEE_IS_WELL_KNOWN_GROUP;
+    ea[2].Trustee.ptstrName = (LPWCH)sidAuthUsers;
+
+    auto result = SetEntriesInAcl(WSUDO_ARRAYSIZE(ea), ea, nullptr, &dacl);
     if (result != ERROR_SUCCESS) {
       log::error("Failed to set ACL entries");
       RETURN_WIN32(result);
