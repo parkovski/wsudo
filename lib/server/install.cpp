@@ -4,6 +4,7 @@
 #include <accctrl.h>
 #include <fileapi.h>
 #include <minwinbase.h>
+#include <sddl.h>
 #include <securitybaseapi.h>
 #include <winnt.h>
 #define SECURITY_WIN32
@@ -210,7 +211,19 @@ HRESULT wsudo::installService() {
       RETURN_LAST_ERROR();
     }
 
-    for (int i = 0; i < 2; ++i) {
+    // I'm not sure what exactly this access mask does, but it comes from
+    // OpenSSH and it seems to work, whereas when I was listing the appropriate
+    // permissions myself it didn't.
+    ea[0].grfAccessPermissions = 0x1200a9;
+    ea[0].grfAccessMode = SET_ACCESS;
+    ea[0].grfInheritance = SUB_CONTAINERS_AND_OBJECTS_INHERIT;
+    ea[0].Trustee.pMultipleTrustee = nullptr;
+    ea[0].Trustee.MultipleTrusteeOperation = NO_MULTIPLE_TRUSTEE;
+    ea[0].Trustee.TrusteeForm = TRUSTEE_IS_SID;
+    ea[0].Trustee.TrusteeType = TRUSTEE_IS_WELL_KNOWN_GROUP;
+    ea[0].Trustee.ptstrName = (LPWCH)sidAuthUsers;
+
+    for (int i = 1; i < WSUDO_ARRAYSIZE(ea); ++i) {
       ea[i].grfAccessPermissions = FILE_ALL_ACCESS;
       ea[i].grfAccessMode = SET_ACCESS;
       ea[i].grfInheritance = SUB_CONTAINERS_AND_OBJECTS_INHERIT;
@@ -218,21 +231,10 @@ HRESULT wsudo::installService() {
       ea[i].Trustee.MultipleTrusteeOperation = NO_MULTIPLE_TRUSTEE;
       ea[i].Trustee.TrusteeForm = TRUSTEE_IS_SID;
     }
-    ea[0].Trustee.TrusteeType = TRUSTEE_IS_USER;
-    ea[0].Trustee.ptstrName = (LPWCH)sidSystem;
-    ea[1].Trustee.TrusteeType = TRUSTEE_IS_GROUP;
-    ea[1].Trustee.ptstrName = (LPWCH)sidAdmin;
-
-    ea[2].grfAccessPermissions =
-      FILE_TRAVERSE | FILE_READ_ATTRIBUTES | FILE_READ_EA
-      | STANDARD_RIGHTS_READ | FILE_EXECUTE | FILE_LIST_DIRECTORY;
-    ea[2].grfAccessMode = SET_ACCESS;
-    ea[2].grfInheritance = SUB_CONTAINERS_AND_OBJECTS_INHERIT;
-    ea[2].Trustee.pMultipleTrustee = nullptr;
-    ea[2].Trustee.MultipleTrusteeOperation = NO_MULTIPLE_TRUSTEE;
-    ea[2].Trustee.TrusteeForm = TRUSTEE_IS_SID;
-    ea[2].Trustee.TrusteeType = TRUSTEE_IS_WELL_KNOWN_GROUP;
-    ea[2].Trustee.ptstrName = (LPWCH)sidAuthUsers;
+    ea[1].Trustee.TrusteeType = TRUSTEE_IS_USER;
+    ea[1].Trustee.ptstrName = (LPWCH)sidSystem;
+    ea[2].Trustee.TrusteeType = TRUSTEE_IS_GROUP;
+    ea[2].Trustee.ptstrName = (LPWCH)sidAdmin;
 
     auto result = SetEntriesInAcl(WSUDO_ARRAYSIZE(ea), ea, nullptr, &dacl);
     if (result != ERROR_SUCCESS) {

@@ -6,6 +6,8 @@
 #include <cstdlib>
 #include <wil/resource.h>
 #include <winnt.h>
+#include <winternl.h>
+#include <sddl.h>
 
 using namespace wsudo;
 
@@ -78,10 +80,12 @@ bool ServerConfig::parse() noexcept {
 
   constexpr DWORD SidSize = 256;
   DWORD cbSid = SidSize;
-  PSID sidSystem{new char[SidSize]}, sidAdmin{new char[SidSize]};
+  PSID sidSystem{new char[SidSize]}, sidAdmin{new char[SidSize]},
+    sidAuthUsers{new char[SidSize]};
   WSUDO_SCOPE_EXIT {
     delete[] reinterpret_cast<char *>(sidSystem);
     delete[] reinterpret_cast<char *>(sidAdmin);
+    delete[] reinterpret_cast<char *>(sidAuthUsers);
   };
 
   if (!CreateWellKnownSid(WinLocalSystemSid, nullptr, sidSystem, &cbSid)) {
@@ -90,6 +94,12 @@ bool ServerConfig::parse() noexcept {
 
   cbSid = SidSize;
   if (!CreateWellKnownSid(WinBuiltinAdministratorsSid, nullptr, sidAdmin,
+                          &cbSid)) {
+    return false;
+  }
+
+  cbSid = SidSize;
+  if (!CreateWellKnownSid(WinAuthenticatedUserSid, nullptr, sidAuthUsers,
                           &cbSid)) {
     return false;
   }
@@ -116,9 +126,16 @@ bool ServerConfig::parse() noexcept {
       foundSystem = true;
     } else if (EqualSid(pSid, sidAdmin)) {
       foundAdmin = true;
+    } else if (EqualSid(pSid, sidAuthUsers)) {
+      if ((ace->Mask & (FILE_READ_DATA | FILE_WRITE_DATA))
+        != FILE_READ_DATA) {
+        log::warn(L"Authenticated Users should have read but not write "
+                  "permission for '{}'.", configPath);
+        return false;
+      }
+      continue;
     } else {
-      log::error(L"Only System and Administrators should have access to '{}'.",
-                 configPath);
+      log::error(L"Extraneous access to '{}'.", configPath);
       return false;
     }
     if ((ace->Mask & (FILE_READ_DATA | FILE_WRITE_DATA))
