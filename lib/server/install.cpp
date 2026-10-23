@@ -281,7 +281,7 @@ HRESULT wsudo::installService() {
       "\n"
       "# Time for a session to stay active\n"
       "session-timeout 300\n";
-    if (!WriteFile(hFile, configText, WSUDO_ARRAYSIZE(configText),
+    if (!WriteFile(hFile, configText, WSUDO_ARRAYSIZE(configText) - 1,
                    &bytesWritten, nullptr)) {
       log::error(L"Failed to write default config to '{}'.", wsudoPath);
       RETURN_LAST_ERROR();
