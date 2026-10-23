@@ -18,14 +18,14 @@ void ServerConfig::setDefaults() noexcept {
 
 static bool setConfig(ServerConfig &config, const std::string &key,
                       std::string &value) noexcept {
-  while (value.back() == ' ' || value.back() == '\t') {
+  while (value.back() == ' ' || value.back() == '\t' || value.back() == '\r') {
     value.erase(value.end() - 1);
   }
 
   if (key == "wait-timeout") {
     char *end;
     unsigned long n = strtoul(value.c_str(), &end, 10);
-    if (end != value.data() + value.length()) {
+    if (value.empty() || end != value.data() + value.length()) {
       log::error("Expected number for 'wait-timeout' in wsudo.conf");
       return false;
     }
@@ -33,7 +33,7 @@ static bool setConfig(ServerConfig &config, const std::string &key,
   } else if (key == "session-timeout") {
     char *end;
     unsigned long n = strtoul(value.c_str(), &end, 10);
-    if (end != value.data() + value.length()) {
+    if (value.empty() || end != value.data() + value.length()) {
       log::error("Expected number for 'session-timeout' in wsudo.conf");
       return false;
     }
@@ -167,11 +167,18 @@ bool ServerConfig::parse() noexcept {
   enum {
     Initial,
     ReadingKey,
-    ReadingWhitespace,
+    ReadingPostKeyWhitespace,
     ReadingValue,
     ReadingComment,
   } state = Initial;
   unsigned line = 1;
+#define SETCONFIG()                                  \
+  do {                                               \
+    if (!setConfig(*this, key, value)) return false; \
+    key.clear();                                     \
+    value.clear();                                   \
+  } while (0)
+
   for (DWORD i = 0; i < bytesRead; ++i) {
     char c = buffer[i];
     char l = c | 0x20;
@@ -196,21 +203,30 @@ bool ServerConfig::parse() noexcept {
     case ReadingKey:
       if ((l >= 'a' && l <= 'z') || c == '-') {
         key.push_back(c);
-      } else if (c == ' ' || c == '\t') {
-        state = ReadingWhitespace;
+      } else if (c == ' ' || c == '\t' || c == '\r') {
+        state = ReadingPostKeyWhitespace;
         continue;
-      } else if (c == '\r' || c == '\n' || c == '\0') {
-        log::error("Expected value in wsudo.conf line {}", line);
-        return false;
+      } else if (c == '\n') {
+        SETCONFIG();
+        ++line;
+        state = Initial;
+      } else if (c == '\0') {
+        SETCONFIG();
       }
       break;
 
-    case ReadingWhitespace:
-      if (c == ' ' || c == '\t') {
+    case ReadingPostKeyWhitespace:
+      if (c == ' ' || c == '\t' || c == '\r') {
         continue;
-      } else if (c == '\r' || c == '\n' || c == '\0') {
-        log::error("Expected value in wsudo.conf line {}", line);
-        return false;
+      } else if (c == '\n') {
+        SETCONFIG();
+        ++line;
+        state = Initial;
+      } else if (c == '\0') {
+        SETCONFIG();
+      } else if (c == '#') {
+        SETCONFIG();
+        state = ReadingComment;
       } else {
         value.push_back(c);
         state = ReadingValue;
@@ -218,27 +234,20 @@ bool ServerConfig::parse() noexcept {
       break;
 
     case ReadingValue:
-      if (c == '\r') {
-        if (!setConfig(*this, key, value)) {
-          return false;
+      {
+        char prevC = buffer[i - 1];
+        if (c == '#' && (prevC == ' ' || prevC == '\t')) {
+          SETCONFIG();
+          state = ReadingComment;
+        } else if (c == '\n') {
+          SETCONFIG();
+          state = Initial;
+          ++line;
+        } else if (c == '\0') {
+          SETCONFIG();
+        } else {
+          value.push_back(c);
         }
-        key.clear();
-        value.clear();
-        state = Initial;
-      } else if (c == '\n') {
-        if (!setConfig(*this, key, value)) {
-          return false;
-        }
-        key.clear();
-        value.clear();
-        state = Initial;
-        ++line;
-      } else if (c == '\0') {
-        if (!setConfig(*this, key, value)) {
-          return false;
-        }
-      } else {
-        value.push_back(c);
       }
       break;
 
@@ -250,6 +259,7 @@ bool ServerConfig::parse() noexcept {
       break;
     }
   }
+#undef SETCONFIG
 
   log::info(L"Processed '{}'.", configPath);
 
