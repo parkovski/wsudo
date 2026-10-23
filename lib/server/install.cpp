@@ -1,8 +1,15 @@
 #include "wsudo/wsudo.h"
 #include "wsudo/server.h"
 #include <Lm.h>
+#include <accctrl.h>
+#include <fileapi.h>
+#include <minwinbase.h>
+#include <securitybaseapi.h>
+#include <winnt.h>
 #define SECURITY_WIN32
 #include <Security.h>
+#include <ShlObj.h>
+#include <Shlwapi.h>
 #include <wil/result_macros.h>
 
 #pragma comment(lib, "Netapi32.lib")
@@ -166,18 +173,138 @@ HRESULT wsudo::installService() {
     }
   }
 
+  {
+    SECURITY_ATTRIBUTES sa;
+    PSECURITY_DESCRIPTOR psd;
+    PACL dacl;
+    PSID sidSystem, sidAdmin;
+    EXPLICIT_ACCESS ea[2];
+    constexpr DWORD SidSize = 256;
+    DWORD cbSid;
+    sidSystem = new char[SidSize];
+    sidAdmin = new char[SidSize];
+    WSUDO_SCOPE_EXIT {
+      delete[] reinterpret_cast<char *>(sidSystem);
+      delete[] reinterpret_cast<char *>(sidAdmin);
+    };
+
+    cbSid = SidSize;
+    if (!CreateWellKnownSid(WinLocalSystemSid, nullptr, sidSystem, &cbSid)) {
+      log::error("Failed to look up System account SID.");
+      RETURN_LAST_ERROR();
+    }
+
+    cbSid = SidSize;
+    if (!CreateWellKnownSid(WinBuiltinAdministratorsSid, nullptr, sidAdmin,
+                            &cbSid)) {
+      log::error("Failed to look up Administrators SID.");
+      RETURN_LAST_ERROR();
+    }
+
+    for (int i = 0; i < WSUDO_ARRAYSIZE(ea); ++i) {
+      ea[i].grfAccessPermissions = FILE_ALL_ACCESS;
+      ea[i].grfAccessMode = SET_ACCESS;
+      ea[i].grfInheritance = SUB_CONTAINERS_AND_OBJECTS_INHERIT;
+      ea[i].Trustee.pMultipleTrustee = nullptr;
+      ea[i].Trustee.MultipleTrusteeOperation = NO_MULTIPLE_TRUSTEE;
+      ea[i].Trustee.TrusteeForm = TRUSTEE_IS_SID;
+    }
+    ea[0].Trustee.TrusteeType = TRUSTEE_IS_USER;
+    ea[0].Trustee.ptstrName = (LPWCH)sidSystem;
+    ea[1].Trustee.TrusteeType = TRUSTEE_IS_GROUP;
+    ea[1].Trustee.ptstrName = (LPWCH)sidAdmin;
+
+    auto result = SetEntriesInAcl(2, ea, nullptr, &dacl);
+    if (result != ERROR_SUCCESS) {
+      log::error("Failed to set ACL entries");
+      RETURN_WIN32(result);
+    }
+    WSUDO_SCOPE_EXIT { LocalFree(dacl); };
+
+    psd = LocalAlloc(LPTR, SECURITY_DESCRIPTOR_MIN_LENGTH);
+    WSUDO_SCOPE_EXIT { LocalFree(psd); };
+    if (!InitializeSecurityDescriptor(psd, SECURITY_DESCRIPTOR_REVISION)) {
+      log::error("Failed to initialize security descriptor.");
+      RETURN_LAST_ERROR();
+    }
+
+    if (!SetSecurityDescriptorOwner(psd, sidAdmin, false)) {
+      log::error("Failed to set security descriptor owner.");
+      RETURN_LAST_ERROR();
+    }
+
+    if (!SetSecurityDescriptorDacl(psd, true, dacl, false)) {
+      log::error("Failed to set security descriptor DACL.");
+      RETURN_LAST_ERROR();
+    }
+
+    if (!SetSecurityDescriptorControl(psd, SE_DACL_PROTECTED,
+                                      SE_DACL_PROTECTED)) {
+      log::error("Failed to mark DACL as protected.");
+      RETURN_LAST_ERROR();
+    }
+
+    sa.lpSecurityDescriptor = psd;
+    sa.nLength = sizeof(SECURITY_ATTRIBUTES);
+    sa.bInheritHandle = false;
+
+    wchar_t *appDataPath;
+    auto hr = SHGetKnownFolderPath(FOLDERID_ProgramData, 0, nullptr,
+                                   &appDataPath);
+    if (FAILED(hr)) {
+      log::error("Couldn't get ProgramData path.");
+      return hr;
+    }
+    std::wstring wsudoPath{appDataPath};
+    CoTaskMemFree(appDataPath);
+    wsudoPath.append(L"\\wsudo");
+    if (!CreateDirectory(wsudoPath.c_str(), &sa)) {
+      log::error(L"Failed to create directory '{}'.", wsudoPath);
+      RETURN_LAST_ERROR();
+    }
+
+    wsudoPath.append(L"\\wsudo.conf");
+    auto hFile = CreateFile(
+      wsudoPath.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS,
+      FILE_ATTRIBUTE_NORMAL, nullptr
+    );
+    if (hFile == INVALID_HANDLE_VALUE) {
+      log::error(L"Couldn't create '{}'.", wsudoPath);
+      RETURN_LAST_ERROR();
+    }
+    WSUDO_SCOPE_EXIT { CloseHandle(hFile); };
+
+    DWORD bytesWritten;
+    char configText[] =
+      "# Time to wait for the first connection\n"
+      "wait-timeout 30\n"
+      "\n"
+      "# Time for a session to stay active\n"
+      "session-timeout 300\n";
+    if (!WriteFile(hFile, configText, WSUDO_ARRAYSIZE(configText),
+                   &bytesWritten, nullptr)) {
+      log::error(L"Failed to write default config to '{}'.", wsudoPath);
+      RETURN_LAST_ERROR();
+    }
+  }
+
   return S_OK;
 }
 
 bool wsudo::uninstallService() {
   // On error we want to just keep going to do as much of the uninstall as
   // possible.
-  bool success;
+  bool success = true;
 
-  success = RegDeleteTreeW(
+  auto regStatus = RegDeleteTreeW(
     HKEY_LOCAL_MACHINE,
     L"SYSTEM\\CurrentControlSet\\Services\\EventLog\\wsudo"
-  ) == ERROR_SUCCESS;
+  );
+  if (regStatus != ERROR_SUCCESS) {
+    log::error("Couldn't delete registry key "
+               "'HKLM\\SYSTEM\\CurrentControlSet\\Services\\EventLog\\wsudo'");
+    success = false;
+  }
 
   auto scManager = OpenSCManagerW(nullptr, nullptr, STANDARD_RIGHTS_WRITE);
   if (scManager) {
@@ -186,16 +313,53 @@ bool wsudo::uninstallService() {
     if (service) {
       WSUDO_SCOPE_EXIT { CloseServiceHandle(service); };
       SERVICE_STATUS serviceStatus{};
-      ControlService(service, SERVICE_CONTROL_STOP, &serviceStatus);
-      DeleteService(service);
+      if (!ControlService(service, SERVICE_CONTROL_STOP, &serviceStatus)) {
+        if (GetLastError() != ERROR_SERVICE_NOT_ACTIVE) {
+          log::error("Couldn't stop service 'wsudo'.");
+          success = false;
+        }
+      }
+      if (!DeleteService(service)) {
+        log::error("Couldn't delete service 'wsudo'.");
+        success = false;
+      }
     } else {
+      log::error("Couldn't open service 'wsudo'.");
       success = false;
     }
   } else {
+    log::error("Couldn't open service manager.");
     success = false;
   }
 
-  success &= NetLocalGroupDel(nullptr, L"wsudoers") == NERR_Success;
+  auto groupDelStatus = NetLocalGroupDel(nullptr, L"wsudoers");
+  if (groupDelStatus != NERR_Success) {
+    log::error("Couldn't delete group 'wsudoers'.");
+    success = false;
+  }
+
+  wchar_t *appDataPath;
+  auto hr = SHGetKnownFolderPath(FOLDERID_ProgramData, 0, nullptr,
+                                 &appDataPath);
+  if (FAILED(hr)) {
+    log::error("Couldn't get ProgramData path.");
+    success = false;
+  }
+  std::wstring wsudoPath{appDataPath};
+  WSUDO_SCOPE_EXIT { CoTaskMemFree(appDataPath); };
+
+  wsudoPath.append(L"\\wsudo\\wsudo.conf");
+  if (!DeleteFile(wsudoPath.c_str())) {
+    log::error(L"Couldn't delete '{}'.", wsudoPath);
+    success = false;
+  }
+
+  wsudoPath = appDataPath;
+  wsudoPath.append(L"\\wsudo");
+  if (!RemoveDirectory(wsudoPath.c_str())) {
+    log::error(L"Couldn't remove directory '{}'.", wsudoPath);
+    success = false;
+  }
 
   return success;
 }
