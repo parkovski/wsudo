@@ -83,7 +83,7 @@ static void CALLBACK timerRoutineTimeout(LPVOID data, BOOLEAN) {
 SessionManager::SessionManager(Server *server, unsigned waitTimeoutSeconds,
                                unsigned sessionTimeoutSeconds) noexcept
   : _server{server}
-  , _defaultTtlSeconds{waitTimeoutSeconds}
+  , _defaultTtlSeconds{sessionTimeoutSeconds}
   , _timerQueue{CreateTimerQueue()}
   , _timeoutTimer{nullptr}
   , _localDomain{}
@@ -120,7 +120,7 @@ SessionManager::SessionManager(Server *server, unsigned waitTimeoutSeconds,
 
   CreateTimerQueueTimer(
     &_timeoutTimer, _timerQueue, timerRoutineTimeout, this,
-    1000 * sessionTimeoutSeconds, 0,
+    1000 * waitTimeoutSeconds, 0,
     WT_EXECUTEINTIMERTHREAD | WT_EXECUTEONLYONCE
   );
 
