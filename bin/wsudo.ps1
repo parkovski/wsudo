@@ -60,7 +60,7 @@ if ($targetCommand.CommandType -eq 'Alias') {
 if ($targetCommand.CommandType -eq 'Application') {
   wsudo.exe @exeArgs @cmdArgs
 } elseif ($targetCommand.CommandType -eq 'Cmdlet') {
-  wsudo.exe @exeArgs $hostProcessName -c @cmdArgs
+  wsudo.exe @exeArgs $hostProcessName -noprofile -c @cmdArgs
 } elseif ($targetCommand.CommandType -eq 'Function') {
   Write-Error "Can't elevate a PowerShell function."
   exit 1
