@@ -135,6 +135,15 @@ wscoro::task<> Server::dispatch(Connection &conn) {
       } else {
         co_await conn.send(msg::Success{});
       }
+    } else if (std:: holds_alternative<msg::EndSession>(message)) {
+      auto key = std::get<msg::EndSession>(message).key;
+      auto session = _sessionManager.find(key);
+      if (!session) {
+        co_await conn.send(msg::Failure{"Session doesn't exist."});
+      } else {
+        _sessionManager.expire(session.get());
+        co_await conn.send(msg::Success{});
+      }
     } else if (std::holds_alternative<msg::Bless>(message)) {
       auto &bless = std::get<msg::Bless>(message);
       auto session = _sessionManager.find(bless.key);

@@ -16,6 +16,21 @@
 
 using namespace wsudo;
 
+void Client::endSession() {
+  _conn.send(msg::EndSession{_key});
+  auto msg = _conn.recv();
+  if (std::holds_alternative<msg::Success>(msg)) {
+    log::info("Session ended.");
+  } else if (std:: holds_alternative<msg::Failure>(msg)) {
+    auto reason = std::get<msg::Failure>(msg).reason;
+    if (!reason.empty()) {
+      log::warn("Couldn't end session: {}", reason);
+    } else {
+      log::warn("Couldn't end session.");
+    }
+  }
+}
+
 void Client::lookupUsername() {
   std::wstring domain;
   std::wstring username;

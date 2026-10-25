@@ -142,6 +142,18 @@ void QuerySession::serialize(std::string &buffer) const {
   serializeSessionMessage(*this, buffer);
 }
 
+bool EndSession::parse(Message &m, std::string_view buffer) noexcept {
+  if (buffer.empty()) {
+    return false;
+  }
+  m = EndSession{buffer};
+  return true;
+}
+
+void EndSession::serialize(std::string &buffer) const {
+  buffer.append(key);
+}
+
 bool Credential::parse(Message &m, std::string_view buffer) noexcept {
   if (buffer.length() < 2) {
     return false;

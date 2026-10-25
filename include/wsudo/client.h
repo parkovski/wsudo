@@ -50,6 +50,7 @@ public:
 
   struct Options {
     bool showHelp;
+    bool endSession;
     bool startService;
     bool keepEnvironment;
     bool useShim;
@@ -61,6 +62,8 @@ public:
 
     bool parse(int argc, const wchar_t *const *argv) noexcept;
   };
+
+  void endSession();
 
 private:
   Connection _conn;

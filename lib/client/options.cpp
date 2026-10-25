@@ -5,6 +5,7 @@ using namespace wsudo;
 
 Client::Options::Options() noexcept
   : showHelp{false}
+  , endSession{false}
   , startService{true}
   , keepEnvironment{false}
   , useShim{true}
@@ -106,6 +107,9 @@ bool Client::Options::parse(int argc, const wchar_t *const *argv) noexcept {
         detach = true;
       } else if (arg == L"-S" || arg == L"--system") {
         runAsSystem = true;
+      } else if (arg == L"--end-session") {
+        endSession = true;
+        return true;
       }
     } else {
       // First non-flag means we've hit the program part of the args.

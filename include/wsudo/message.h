@@ -122,6 +122,19 @@ namespace wsudo::msg {
     void serialize(std::string &buffer) const;
   };
 
+  struct EndSession {
+    static constexpr std::string_view code{"ENDS"};
+
+    std::string_view key;
+
+    constexpr explicit EndSession(std::string_view key) noexcept
+      : key{key}
+    {}
+
+    static bool parse(Message &m, std::string_view buffer) noexcept;
+    void serialize(std::string &buffer) const;
+  };
+
   // Send user credentials.
   struct Credential {
     static constexpr std::string_view code{"CRED"};
@@ -170,6 +183,7 @@ namespace wsudo::msg {
     AccessDenied,
     InitSession,
     QuerySession,
+    EndSession,
     Credential,
     Bless
   > {

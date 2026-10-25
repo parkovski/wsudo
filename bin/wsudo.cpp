@@ -23,6 +23,8 @@ static void showHelp() {
   log::print("  --detach                    don't wait for the child process "
              "to finish - this may break console apps\n");
   log::print("  -S, --system                run as NT AUTHORITY\\System\n");
+  log::print("  --end-session               end your wsudo session, requiring "
+             "a password on next use\n");
 }
 
 static bool startService() {
@@ -141,6 +143,11 @@ int wmain(int argc, wchar_t *argv[]) {
   }
   WSUDO_SCOPE_EXIT { client.~Client(); };
   log::debug("Client initialized");
+
+  if (opts.endSession) {
+    client.endSession();
+    return 0;
+  }
 
   return client(opts);
 }
